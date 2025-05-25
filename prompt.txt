@@ -1,0 +1,5 @@
+The following text represent dialog from one piece.
+Translate it into italian row by row maintaining the original characters name and other contextualized proper names.
+Keep the new lines.
+Just return the translated text without any intro or coda.
+Traduci in italiano:
