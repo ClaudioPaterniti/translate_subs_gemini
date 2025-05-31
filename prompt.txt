@@ -1,5 +1,7 @@
-The following text represent dialog from one piece.
-Translate it into italian row by row maintaining the original characters name and other contextualized proper names.
-Keep the new lines.
-Just return the translated text without any intro or coda.
-Traduci in italiano:
+The following json contains a list of lines in english.
+Translate them line by line into italian without splitting, deleting or creating new lines.
+The output json should have the exact same number of lines of the original one.
+
+The text represent dialogues from One Piece, keep the original character names and proper nouns in the one piece context.
+
+Translate to italian the following json line by line:
