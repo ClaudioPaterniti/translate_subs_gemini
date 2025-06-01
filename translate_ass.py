@@ -1,76 +1,96 @@
 import os
 import sys
-import time
+import asyncio
+import math
 
-from google import genai
-from google.genai.errors import ClientError, ServerError
-from google.genai.types import GenerateContentResponse
-from pydantic import BaseModel
+from collections.abc import Coroutine
 
-class MisalignmentException(Exception):
-    pass
+import src.gemini as gemini
 
-class Dialogue(BaseModel):
-    lines: list[str]
+from src.ass import *
 
-class Ass(BaseModel):
-    header: str
-    fields: list[str]
-    dialogue: Dialogue
+RPM = 10
+TPM = 250_000
+wait_seconds = 60
+suffix = '_ita'
+script_path, _ = os.path.split(__file__)
 
-    def to_string(self) -> str:
-        if (len(self.fields) != len(self.dialogue.lines)):
-            raise MisalignmentException("Dialog lines do not match fields")
-        return self.header +\
-            '\n'.join([f"{f},{l}" for f, l in zip(self.fields, self.dialogue.lines)])
-
-    @staticmethod
-    def from_string(text: str) -> 'Ass':
-        splitted = text.split('Dialogue:', 1)
-        header = splitted[0]
-        text = 'Dialogue:'+ splitted[1].strip()
-        fields = [','.join(l.split(',', 10)[:9]) for l in text.split('\n')]
-        dialogue = Dialogue(lines=[''.join(l.split(',', 10)[9:]) for l in text.split('\n')])
-        return Ass(header=header, fields=fields, dialogue=dialogue)
-
-def ask_gemini_with_retry(client: genai.Client, question: str, retries: int = 2) -> GenerateContentResponse:
-    while retries > 0:
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.0-flash", contents=question,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": Dialogue,
-                }
-            )
-            break
-        except (ClientError, ServerError) as ex:
-            if ex.status in {'RESOURCE_EXHAUSTED', '503 UNAVAILABLE'} and retries > 0:
-                retries -= 1
-                wait_time = 70 * (2 - retries)
-                print(f"Gemini returned {ex.status}, retrying in {wait_time} seconds")
-                time.sleep(wait_time)
+async def translate_and_reschedule(tasks: dict[Ass, Coroutine], reschedule: bool = True) -> list[Ass]:
+    print(f"\nExecuting {len(tasks)} translations\n")
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+    failed = 0; rescheduled = []
+    for ass, result in zip(tasks.keys(), results):
+        if isinstance(result, BaseException):
+            if reschedule and result.status in {'RESOURCE_EXHAUSTED', 'UNAVAILABLE'}:
+                print(f"{ass.filename} translation failed: {result.status}, rescheduling for next batch")
+                rescheduled.append(ass)
             else:
-                print("Call to Gemini failed")
-                raise ex
-    return response
+                print(f"\n\n{ass.filename} translation failed: {result.status} {result.message}\n\n")
+                failed += 1
+        else:
+            response_cache_file = os.path.join(script_path, 'data', 'cache', f'{result.filename}_cache.json')
+            os.makedirs(os.path.dirname(response_cache_file), exist_ok=True)
+            print(f"Saving response cache {response_cache_file}")
+            with open(response_cache_file, 'w+', encoding='utf-8') as fp:
+                fp.write(result.model_dump_json(indent=2))
 
-def translate_ass(client: genai.Client, text: str, prompt: str) -> Ass:
-    ass = Ass.from_string(text)
+            try:
+                final = result.to_string()
+            except MisalignmentException as ex:
+                    print(ex.message)
+                    failed += 1
+                    continue
 
-    question = prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
+            translated_file = os.path.join(result.path, f'{result.filename}{suffix}{result.ext}')
+            print(f"Generating final {translated_file}")
+            with open(translated_file, 'w+', encoding='utf-8-sig') as fp:
+                fp.write(final)
+    print(f"\n\n{failed} translations failed, {len(rescheduled)} rescheduled\n\n")
+    return rescheduled
 
-    print(f"Calling Gemini")
-    response = ask_gemini_with_retry(client, question)
-    translated: Dialogue = response.parsed
-    ass.dialogue = translated
+async def main(
+        client: gemini.genai.Client, prompt: str, files: list[str]):
+    max_calls = len(files)*2
+    tasks = {}; tasks_tokens = 0; gemini_tasks = 0; calls = 0
+    for file_path in file_paths:
+        print(f'Parsing {file_path}')
+        ass = Ass.from_file(file_path)
 
-    return ass
+        response_cache_file = os.path.join(script_path, 'data', 'cache', f'{ass.filename}_cache.json')
+
+        if os.path.isfile(response_cache_file):
+            print(f"Reading response from cache")
+            with open(response_cache_file, 'r', encoding='utf-8') as fp:
+                tasks[ass] = asyncio.sleep(0, Ass.model_validate_json(fp.read()))
+        else:
+            ass.translation_tokens_estimate = math.ceil(gemini.estimate_question_tokens(prompt, ass)*2.1)
+            while tasks_tokens + ass.translation_tokens_estimate > TPM or gemini_tasks >= RPM:
+                to_reschedule = await translate_and_reschedule(tasks, reschedule=calls < max_calls)
+                calls += len(tasks)
+                print("Waiting 60 seconds for next batch")
+                await asyncio.sleep(wait_seconds)
+                tasks = {a: gemini.translate_ass(client, prompt, a) for a in to_reschedule}
+                gemini_tasks = len(tasks)
+                tasks_tokens = sum(a.translation_tokens_estimate for a in to_reschedule)
+
+            gemini_tasks += 1
+            tasks_tokens += ass.translation_tokens_estimate
+            tasks[ass] = gemini.translate_ass(client, prompt, ass)
+
+    while tasks:
+        to_reschedule = await translate_and_reschedule(tasks, reschedule=calls < max_calls)
+        if to_reschedule:
+            print("Waiting 60 seconds for next batch")
+            await asyncio.sleep(wait_seconds)
+        calls += len(tasks)
+        tasks = {a: gemini.translate_ass(client, prompt, a) for a in to_reschedule}
 
 if __name__ == '__main__':
-
-    suffix = '_ita'
-    file_paths = [f for f in sys.argv[1:] if f.endswith('.ass') and not f.endswith(f'{suffix}.ass')]
+    if len(sys.argv) == 2 and os.path.isdir(sys.argv[1]):
+        folder = sys.argv[1]
+        file_paths = [os.path.join(folder, f) for f in os.listdir(folder)]
+    else:
+        file_paths = [f for f in sys.argv[1:] if f.endswith('.ass') and not f.endswith(f'{suffix}.ass')]
 
     with (
             open('prompt.txt', 'r') as prompt_fp,
@@ -79,36 +99,6 @@ if __name__ == '__main__':
         prompt = prompt_fp.read()
         key = key_fp.read()
 
-    client = genai.Client(api_key=key)
+    client = gemini.genai.Client(api_key=key)
 
-    for file_path in file_paths:
-        print(f'Translating {file_path}')
-        path, file = os.path.split(file_path)
-        filename, ext = os.path.splitext(file)
-
-        response_cache_file = os.path.join('data', f'{filename}_cache.json')
-
-        if os.path.isfile(response_cache_file):
-            print(f"Reading response from cache")
-            with open(response_cache_file, 'r', encoding='utf-8') as fp:
-                translated = Ass.model_validate_json(fp.read())
-        else:
-            with open(file_path, 'r', encoding='utf-8-sig') as subs_fp:
-                text = subs_fp.read()
-
-            translated = translate_ass(client, text, prompt)
-            os.makedirs(os.path.dirname(response_cache_file), exist_ok=True)
-            print(f"Saving response cache {response_cache_file}")
-            with open(response_cache_file, 'w+', encoding='utf-8') as fp:
-                fp.write(translated.model_dump_json(indent=2))
-
-        try:
-            final = translated.to_string()
-        except MisalignmentException as ex:
-                print(ex.message)
-                continue
-
-        translated_file = os.path.join(path, f'{filename}{suffix}{ext}')
-        print(f"Generating final {translated_file}")
-        with open(translated_file, 'w+', encoding='utf-8-sig') as fp:
-            fp.write(final)
+    asyncio.run(main(client, prompt, file_paths))

@@ -15,7 +15,7 @@ if (!(Test-Path -Path $venv_path)){
     .\.venv\Scripts\Activate.ps1
     python -m pip install --upgrade pip
     Write-Host "Installing requirements"
-    pip install -t requirements.txt
+    pip install -r requirements.txt
 }
 else {
     .\.venv\Scripts\Activate.ps1
