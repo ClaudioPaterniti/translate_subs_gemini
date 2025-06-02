@@ -6,21 +6,20 @@ from src.ass import *
 
 class GeminiClient:
 
-    def __init__(self, key: str, model: str, prompt: str, temperature: int = 0):
+    def __init__(self, key: str, model: str, prompt: str, config: dict = None):
         self.model = model
         self.prompt = prompt
-        self.temperature = temperature
+        self.config = config or {}
 
         self.client = genai.Client(api_key=key)
 
 
     async def ask_question(self,
             question: str, structure: BaseModel = None) -> GenerateContentResponse:
-        config= {
+        config= self.config | {
             "response_mime_type": "application/json",
-            "response_schema": structure,
-            "temperature": self.temperature
-        } if structure is not None else {}
+            "response_schema": structure
+        } if structure is not None else self.config
         response = await self.client.aio.models.generate_content(
             model=self.model, contents=question,
             config=config
