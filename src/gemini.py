@@ -3,6 +3,7 @@ from google.genai.errors import ClientError, ServerError
 from google.genai.types import GenerateContentResponse
 
 from src.ass import *
+from src import logger
 
 class GeminiClient:
 
@@ -29,7 +30,7 @@ class GeminiClient:
     async def translate_ass(self, ass: Ass) -> Ass:
         question = self.prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
 
-        print(f"{ass.filename}: calling gemini")
+        logger.info(f"{ass.filename}: calling gemini")
         try:
             response = await self.ask_question(question, Dialogue)
         except (ClientError, ServerError) as ex:
@@ -41,7 +42,7 @@ class GeminiClient:
         translated: Dialogue = response.parsed
         out = ass.model_copy()
         out.dialogue = translated
-        print(f"{ass.filename}: Gemini call terminated")
+        logger.info(f"{ass.filename}: Gemini call terminated")
         return out
 
     async def compute_question_tokens(self, ass: Ass) -> int:

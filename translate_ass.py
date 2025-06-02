@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from src.ass import *
 from src.gemini import GeminiClient
 from src.rate_limited_queue import RateLimitedQueue
+from src import logger
 
 logs = []
 failed = 0
@@ -22,30 +23,33 @@ class Config(BaseModel):
     outfile_suffix: str
     max_requests: int
 
-def log(s: str, success: bool = True):
-    global failed
-    if not success: failed += 1
-    print(s)
-    logs.append(s)
+def log_result(s: str, success: bool = True):
+    global failed; global logs
+    if not success:
+        failed += 1
+        logger.error(s)
+    else:
+        logger.success(s)
+    logs.append((s, success))
     return success
 
-async def complete_translation(ass: Ass, translation: Awaitable[Ass], out_path: str) -> str:
+async def complete_translation(ass: Ass, translation: Awaitable[Ass], out_file_name: str) -> str:
     try:
         result = await translation
 
         response_cache_file = os.path.join(
             script_path, 'data', 'cache', f'{result.filename}_cache.json')
         os.makedirs(os.path.dirname(response_cache_file), exist_ok=True)
-        print(f"{ass.filename}: Saving response cache {response_cache_file}")
+        logger.info(f"{ass.filename}: Saving response cache {response_cache_file}")
         with open(response_cache_file, 'w+', encoding='utf-8') as fp:
             fp.write(result.model_dump_json(indent=2))
 
-        result.to_file(out_path)
+        result.to_file(os.path.join(ass.path, out_file_name))
 
-        return log(f"{ass.filename}: Generated {out_path}")
+        return log_result(f"{ass.filename}: Generated {out_file_name}")
 
     except Exception as ex:
-        return log(f"{ass.filename} failed: {ex}", False),
+        return log_result(f"{ass.filename} failed: {ex}", False),
 
 
 async def main(queue: RateLimitedQueue, file_paths: list[str], config: Config):
@@ -56,30 +60,34 @@ async def main(queue: RateLimitedQueue, file_paths: list[str], config: Config):
 
             response_cache_file = os.path.join(
                 script_path, 'data', 'cache', f'{ass.filename}_cache.json')
-            translated_file = os.path.join(ass.path, f'{ass.filename}{config.outfile_suffix}{ass.ext}')
+            out_file_name = f'{ass.filename}{config.outfile_suffix}{ass.ext}'
 
             if os.path.isfile(response_cache_file):
                 with open(response_cache_file, 'r', encoding='utf-8') as fp:
                     translated = Ass.model_validate_json(fp.read())
-                    translated.to_file(translated_file)
-                    log(f"{ass.filename}: Generated from cache {translated_file}")
+                    translated.to_file(os.path.join(ass.path, out_file_name))
+                    log_result(f"{ass.filename}: Generated from cache {out_file_name}")
             else:
-                tasks.append(complete_translation(ass, queue.queue_translation(ass), translated_file))
+                tasks.append(complete_translation(ass, queue.queue_translation(ass), out_file_name))
 
         except Exception as ex:
-            log(f"{ass.filename} failed: {ex}", False)
+            log_result(f"{ass.filename} failed: {ex}", False)
 
     queue.max_retries = min(queue.max_retries, len(tasks))
     results = await asyncio.gather(*tasks)
 
-    print(f'\nTerminated, {failed} failed\n', '\n'.join(logs))
+    logger.info(f'\nTerminated, {failed} failed\n')
+    for log, success in logs:
+        if success: logger.success(log)
+        else: logger.error(log)
+
 
 if __name__ == '__main__':
 
     with (
-            open('prompt.txt', 'r') as prompt_fp,
-            open('gemini.key', 'r') as key_fp,
-            open('gemini_config.json', 'r') as config_fp,
+            open(os.path.join(script_path, 'prompt.txt'), 'r') as prompt_fp,
+            open(os.path.join(script_path, 'gemini.key'), 'r') as key_fp,
+            open(os.path.join(script_path, 'gemini_config.json'), 'r') as config_fp,
         ):
         prompt = prompt_fp.read()
         key = key_fp.read()

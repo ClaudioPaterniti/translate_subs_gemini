@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from src.gemini import GeminiClient
 from src.ass import *
+from src import logger
 
 @dataclass
 class LogEntry:
@@ -67,7 +68,7 @@ class RateLimitedQueue:
             return result
         except RetriableException as ex:
             if self._retries < self.max_retries:
-                print(f"{ass.filename}: {ex.message} - rescheduling")
+                logger.warning(f"{ass.filename}: {ex.message} - rescheduling")
                 self._retries += 1
                 self._complete(ass)
                 return await self.queue_translation(ass)

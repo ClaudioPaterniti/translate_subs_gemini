@@ -1,25 +1,6 @@
-$py_version = python -V
-if (!$py_version.StartsWith("Python")){
-    Write-Error "Python not installed"
-    Read-Host -Prompt "Press Enter to exit"
-    Exit
-}
-
-Set-Location $PSScriptRoot
-
-$venv_path = Join-Path $PSScriptRoot ".venv"
-if (!(Test-Path -Path $venv_path)){
-    Write-Host "Creating virtual environtment .venv"
-    python -m venv .venv
-    Write-Host "Upgrading pip"
-    .\.venv\Scripts\Activate.ps1
-    python -m pip install --upgrade pip
-    Write-Host "Installing requirements"
-    pip install -r requirements.txt
-}
-else {
-    .\.venv\Scripts\Activate.ps1
-}
+$script_path = Join-Path $PSScriptRoot "./translate_ass.py"
+$env_path = Join-Path $PSScriptRoot ".\.venv\Scripts\Activate.ps1"
+& $env_path
 
 Add-Type -AssemblyName System.Windows.Forms
 $FileBrowser = New-Object System.Windows.Forms.OpenFileDialog -Property @{
@@ -31,7 +12,7 @@ $FileBrowser = New-Object System.Windows.Forms.OpenFileDialog -Property @{
 $result = $FileBrowser.ShowDialog()
 
 if ($result -ne "Cancel") {
-    python ./translate_ass.py @($FileBrowser.FileNames)
+    python $script_path @($FileBrowser.FileNames)
 }
 
 Read-Host -Prompt "Press Enter to exit"
