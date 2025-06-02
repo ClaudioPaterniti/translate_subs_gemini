@@ -1,53 +1,56 @@
-import asyncio
-
 from google import genai
 from google.genai.errors import ClientError, ServerError
 from google.genai.types import GenerateContentResponse
 
 from src.ass import *
 
+class GeminiClient:
 
-async def ask_gemini_with_retry(
-        client: genai.Client, question: str, retries: int = 1) -> GenerateContentResponse:
-    while retries + 1 > 0:
+    def __init__(self, key: str, model: str, prompt: str):
+        self.model = model
+        self.prompt = prompt
+
+        self.client = genai.Client(api_key=key)
+
+
+    async def ask_question(self,
+            question: str, structure: BaseModel = None) -> GenerateContentResponse:
+        config= {
+            "response_mime_type": "application/json",
+            "response_schema": structure,
+        } if structure is not None else {}
+        response = await self.client.aio.models.generate_content(
+            model=self.model, contents=question,
+            config=config
+        )
+        return response
+
+    async def translate_ass(self, ass: Ass) -> Ass:
+        question = self.prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
+
+        print(f"{ass.filename}: calling gemini")
         try:
-            response = await client.aio.models.generate_content(
-                model="gemini-2.0-flash", contents=question,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": Dialogue,
-                }
-            )
-            break
+            response = await self.ask_question(question, Dialogue)
         except (ClientError, ServerError) as ex:
-            retries -= 1
-            if ex.status in {'RESOURCE_EXHAUSTED', '503 UNAVAILABLE'} and retries > 0:
-                wait_time = 70 * (2 - retries)
-                print(f"Gemini returned {ex.status}, retrying in {wait_time} seconds")
-                await asyncio.sleep(wait_time)
+            if ex.status in {'RESOURCE_EXHAUSTED', 'UNAVAILABLE'}:
+                raise RetriableException(ass, ex.message)
             else:
                 raise ex
-    return response
 
-async def translate_ass(client: genai.Client, prompt: str, ass: Ass, retries: int = 0) -> Ass:
-    question = prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
+        translated: Dialogue = response.parsed
+        out = ass.model_copy()
+        out.dialogue = translated
+        print(f"{ass.filename}: Gemini call terminated")
+        return out
 
-    print(f"Calling Gemini for {ass.filename}")
-    response = await ask_gemini_with_retry(client, question, retries)
-    translated: Dialogue = response.parsed
-    out = ass.model_copy()
-    out.dialogue = translated
-    print(f"Gemini call terminated for {ass.filename}")
-    return out
+    async def compute_question_tokens(self, ass: Ass) -> int:
+        question = self.prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
+        response = await self.client.aio.models.count_tokens(
+            model=self.model,
+            contents=question,
+        )
+        return response.total_tokens
 
-async def compute_question_tokens(client: genai.Client, prompt: str, ass: Ass) -> int:
-    question = prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
-    response = await client.aio.models.count_tokens(
-        model='gemini-2.0-flash',
-        contents=question,
-    )
-    return response.total_tokens
-
-def estimate_question_tokens(prompt: str, ass: Ass) -> int:
-    question = prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
-    return int(len(question)*0.5)
+    def estimate_question_tokens(self, ass: Ass) -> int:
+        question = self.prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
+        return int(len(question)*0.5)
