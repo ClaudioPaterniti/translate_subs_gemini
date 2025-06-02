@@ -4,7 +4,6 @@ Simple python script to translate .ass files with gemini api.
 
 ## Setup
 
-
 The program required python to be installed and expects a gemini key in the file gemini.key.
 
 The setup_env.ps1 script can be used to setup the python .venv with the required dependencies, it does nothing more than:
@@ -15,7 +14,11 @@ The setup_env.ps1 script can be used to setup the python .venv with the required
 > pip install -r requirements.txt
 ```
 
+Setup an appropriate prompt.txt to guide the translation.
+Gemini settings can be configured in gemini_config.json
+
 ## How to
+
 The translate_ass.py script takes a list of file paths or a folder and generate a translated file for each .ass file.
 
 ```console
@@ -24,6 +27,4 @@ The translate_ass.py script takes a list of file paths or a folder and generate 
 ```
 
 The translate_ass.ps1 will prompt the user with a file browser window to select the files to translate and launch the python script.
-
-Gemini settings can be configured in gemini_config.json
 
