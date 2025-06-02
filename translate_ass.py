@@ -21,7 +21,7 @@ class Config(BaseModel):
     token_per_minutes: int
     content_config: dict[str, Any]
     outfile_suffix: str
-    max_requests: int
+    max_retries: int
 
 def log_result(s: str, success: bool = True):
     global failed; global logs
@@ -104,6 +104,6 @@ if __name__ == '__main__':
 
     client = GeminiClient(key, config.model, prompt, config.content_config)
     queue = RateLimitedQueue(
-        client, config.requests_per_minutes, config.token_per_minutes, config.max_requests)
+        client, config.requests_per_minutes, config.token_per_minutes, config.max_retries)
 
     asyncio.run(main(queue, file_paths, config))

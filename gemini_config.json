@@ -5,6 +5,6 @@
     "content_config": {
         "temperature": 0.0
     },
-    "max_requests": 50,
+    "max_retries": 50,
     "outfile_suffix": "_ita"
 }
