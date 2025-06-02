@@ -1,5 +1,5 @@
 {
-    "model": "gemini-2.0-flash",
+    "model": "gemini-2.0-flash-lite",
     "requests_per_minutes": 15,
     "token_per_minutes": 1000000,
     "content_config": {
