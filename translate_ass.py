@@ -8,55 +8,62 @@ from src.ass import *
 from src.gemini import GeminiClient
 from src.rate_limited_queue import RateLimitedQueue
 
-RPM  = 10
-TPM = 250_000
+model = "gemini-2.0-flash"
+RPM  = 15
+TPM = 1_000_000
 suffix = '_ita'
+logs = []
+failed = 0
 
-async def complete_translation(ass: Ass, translation: Awaitable[Ass]) -> str:
+def log(s: str, success: bool = True):
+    global failed
+    if not success: failed += 1
+    print(s)
+    logs.append(s)
+    return success
+
+async def complete_translation(ass: Ass, translation: Awaitable[Ass], out_path: str) -> str:
     try:
         result = await translation
+
+        response_cache_file = os.path.join('data', 'cache', f'{result.filename}_cache.json')
+        os.makedirs(os.path.dirname(response_cache_file), exist_ok=True)
+        print(f"{ass.filename}: Saving response cache {response_cache_file}")
+        with open(response_cache_file, 'w+', encoding='utf-8') as fp:
+            fp.write(result.model_dump_json(indent=2))
+
+        result.to_file(out_path)
+
+        return log(f"{ass.filename}: Generated {out_path}")
+
     except Exception as ex:
-        return f"{ass.filename} failed: {ex}"
-
-    response_cache_file = os.path.join('data', 'cache', f'{result.filename}_cache.json')
-    os.makedirs(os.path.dirname(response_cache_file), exist_ok=True)
-    print(f"{ass.filename}: Saving response cache {response_cache_file}")
-    with open(response_cache_file, 'w+', encoding='utf-8') as fp:
-        fp.write(result.model_dump_json(indent=2))
-
-    try:
-        final = result.to_string()
-    except MisalignmentException as ex:
-        return f"{ass.filename} failed: {ex}"
-
-    translated_file = os.path.join(result.path, f'{result.filename}{suffix}{result.ext}')
-    with open(translated_file, 'w+', encoding='utf-8-sig') as fp:
-        fp.write(final)
-
-    return f"{ass.filename}: Generated {translated_file}"
+        return log(f"{ass.filename} failed: {ex}", False),
 
 
 async def main(queue: RateLimitedQueue, file_paths: list[str]):
-    tasks = []; uncached = 0
+    tasks = []
     for file_path in file_paths:
-        print(f'Parsing {file_path}')
-        ass = Ass.from_file(file_path)
+        try:
+            ass = Ass.from_file(file_path)
 
-        response_cache_file = os.path.join('data', 'cache', f'{ass.filename}_cache.json')
+            response_cache_file = os.path.join('data', 'cache', f'{ass.filename}_cache.json')
+            translated_file = os.path.join(ass.path, f'{ass.filename}{suffix}{ass.ext}')
 
-        if os.path.isfile(response_cache_file):
-            print(f"{ass.filename}: Reading response from cache")
-            with open(response_cache_file, 'r', encoding='utf-8') as fp:
-                tasks.append(complete_translation(
-                    ass, asyncio.sleep(0, Ass.model_validate_json(fp.read()))))
-        else:
-            tasks.append(complete_translation(ass, queue.queue_translation(ass)))
-            uncached += 1
+            if os.path.isfile(response_cache_file):
+                with open(response_cache_file, 'r', encoding='utf-8') as fp:
+                    translated = Ass.model_validate_json(fp.read())
+                    translated.to_file(translated_file)
+                    log(f"{ass.filename}: Generated from cache {translated_file}")
+            else:
+                tasks.append(complete_translation(ass, queue.queue_translation(ass), translated_file))
 
-    queue.max_retries = min(queue.max_retries, uncached)
+        except Exception as ex:
+            log(f"{ass.filename} failed: {ex}", False)
+
+    queue.max_retries = min(queue.max_retries, len(tasks))
     results = await asyncio.gather(*tasks)
 
-    print('\nTerminated\n', '\n'.join(results))
+    print(f'\nTerminated, {failed} failed\n', '\n'.join(logs))
 
 if __name__ == '__main__':
     os.chdir(os.path.abspath(os.path.split(__file__)[0]))
@@ -75,7 +82,7 @@ if __name__ == '__main__':
         prompt = prompt_fp.read()
         key = key_fp.read()
 
-    client = GeminiClient(key, "gemini-2.0-flash", prompt)
+    client = GeminiClient(key, model, prompt)
     queue = RateLimitedQueue(client, RPM, TPM, 10)
 
     asyncio.run(main(queue, file_paths))

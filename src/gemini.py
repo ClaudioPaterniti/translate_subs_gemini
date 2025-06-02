@@ -6,9 +6,10 @@ from src.ass import *
 
 class GeminiClient:
 
-    def __init__(self, key: str, model: str, prompt: str):
+    def __init__(self, key: str, model: str, prompt: str, temperature: int = 0):
         self.model = model
         self.prompt = prompt
+        self.temperature = temperature
 
         self.client = genai.Client(api_key=key)
 
@@ -18,6 +19,7 @@ class GeminiClient:
         config= {
             "response_mime_type": "application/json",
             "response_schema": structure,
+            "temperature": self.temperature
         } if structure is not None else {}
         response = await self.client.aio.models.generate_content(
             model=self.model, contents=question,

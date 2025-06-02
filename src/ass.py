@@ -18,11 +18,24 @@ class Ass(BaseModel):
     dialogue: Dialogue
     translation_tokens_estimate: Optional[int] = None
 
-    def to_string(self) -> str:
+    def _strip_dialogue(self):
+        s = e = 0
+        while not self.dialogue.lines[s]:
+            s += 1
+        while not self.dialogue.lines[e]:
+            e -= 1
+        self.dialogue.lines = self.dialogue.lines[s: e or None]
+
+    def to_file(self, path = None) -> str:
+        self._strip_dialogue()
         if (len(self.fields) != len(self.dialogue.lines)):
             raise MisalignmentException("Dialog lines do not match fields")
-        return self.header +\
+        text =  self.header +\
             '\n'.join([f"{f},{l}" for f, l in zip(self.fields, self.dialogue.lines)])
+        with open(
+                path or os.path.join(self.path, self.filename + self.ext),
+                'w+', encoding='utf-8-sig') as fp:
+            fp.write(text)
 
     @staticmethod
     def from_file(file_path: str) -> 'Ass':
