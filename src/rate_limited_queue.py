@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from collections import deque
 from dataclasses import dataclass
+from math import inf
 
 from src.gemini import GeminiClient
 from src.ass import *
@@ -16,12 +17,14 @@ class LogEntry:
 class RateLimitedQueue:
 
     def __init__(self,
-                 client: GeminiClient, rpm: int, tpm: int,
-                 max_retries: int, wait_window: timedelta = timedelta(seconds=50)):
+                 client: GeminiClient, requests_per_minute: int,
+                 tokens_per_minute: int, max_retries: int, max_concurrent_requests: int = None,
+                 wait_window: timedelta = timedelta(seconds=50)):
         self.client = client
-        self.rpm = rpm
-        self.tpm = tpm
+        self.rpm = requests_per_minute
+        self.tpm = tokens_per_minute
         self.max_retries = max_retries
+        self.max_concurrent_requests = max_concurrent_requests or inf
         self.wait_window = wait_window
 
         self._retries = 0
@@ -40,6 +43,7 @@ class RateLimitedQueue:
         if (
             self._minute_requests + 1 <= self.rpm
             and self._minute_tokens + ass.translation_tokens_estimate < self.tpm
+            and self._running < self.max_concurrent_requests
         ):
             self._minute_requests += 1
             self._minute_tokens += ass.translation_tokens_estimate

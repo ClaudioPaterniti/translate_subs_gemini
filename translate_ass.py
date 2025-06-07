@@ -19,6 +19,7 @@ class Config(BaseModel):
     model: str
     requests_per_minutes: int
     token_per_minutes: int
+    max_concurrent_requests: Optional[int] = None
     content_config: dict[str, Any]
     outfile_suffix: str
     max_retries: int
@@ -83,14 +84,20 @@ async def main(queue: RateLimitedQueue, file_paths: list[str], config: Config):
 
 
 if __name__ == '__main__':
+    key = os.environ.get('GEMINI_KEY')
+    if key is None and os.path.exists(os.path.join(script_path, 'gemini.key')):
+            with open(os.path.join(script_path, 'gemini.key'), 'r') as key_fp:
+                key = key_fp.read()
+
+    if not key:
+        logger.error("Could not retrieve gemini key, populate env variable GEMINI_KEY or file gemini.key")
+        sys.exit()
 
     with (
             open(os.path.join(script_path, 'prompt.txt'), 'r') as prompt_fp,
-            open(os.path.join(script_path, 'gemini.key'), 'r') as key_fp,
             open(os.path.join(script_path, 'gemini_config.json'), 'r') as config_fp,
         ):
         prompt = prompt_fp.read()
-        key = key_fp.read()
         config = Config.model_validate_json(config_fp.read())
 
     if len(sys.argv) == 2 and os.path.isdir(sys.argv[1]):
@@ -104,6 +111,7 @@ if __name__ == '__main__':
 
     client = GeminiClient(key, config.model, prompt, config.content_config)
     queue = RateLimitedQueue(
-        client, config.requests_per_minutes, config.token_per_minutes, config.max_retries)
+        client, config.requests_per_minutes, config.token_per_minutes,
+        config.max_retries, config.max_concurrent_requests)
 
     asyncio.run(main(queue, file_paths, config))
