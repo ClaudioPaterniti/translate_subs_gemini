@@ -42,7 +42,6 @@ class GeminiClient:
         translated: Dialogue = response.parsed
         out = ass.model_copy()
         out.dialogue = translated
-        logger.info(f"{ass.filename}: Gemini call terminated")
         return out
 
     async def compute_question_tokens(self, ass: Ass) -> int:

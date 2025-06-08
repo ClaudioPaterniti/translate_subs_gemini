@@ -41,8 +41,8 @@ class RateLimitedQueue:
             self._minute_tokens -= self._completed_log.popleft().tokens
             self._minute_requests -= 1
         if (
-            self._minute_requests + 1 <= self.rpm
-            and self._minute_tokens + ass.translation_tokens_estimate < self.tpm
+            self._minute_requests < self.rpm
+            and self._minute_tokens + ass.translation_tokens_estimate <= self.tpm
             and self._running < self.max_concurrent_requests
         ):
             self._minute_requests += 1
@@ -63,7 +63,11 @@ class RateLimitedQueue:
         if ass.translation_tokens_estimate > self.tpm:
             raise Exception(f"{ass.filename}: Cannot translate, text too long")
 
+        queued = False
         while not self._try_start(ass):
+            if not queued:
+                queued = True
+                logger.info(f"{ass.filename}: in queue")
             await asyncio.sleep(2)
 
         try:
