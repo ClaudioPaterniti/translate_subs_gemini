@@ -32,6 +32,7 @@ class RateLimitedQueue:
         self._minute_requests = 0
         self._running = 0
         self._completed_log: deque[LogEntry] = deque()
+        self._waiting_warning = False
 
 
     def _try_start(self, ass: Ass) -> bool:
@@ -48,7 +49,12 @@ class RateLimitedQueue:
             self._minute_requests += 1
             self._minute_tokens += ass.translation_tokens_estimate
             self._running += 1
+            self._waiting_warning = False
             return True
+        elif self._running == 0 and not self._waiting_warning:
+            wait = self.wait_window + self._completed_log[0].utc - datetime.now(tz=timezone.utc)
+            logger.warning(f"Waiting {wait.seconds} seconds for rate limits")
+            self._waiting_warning = True
         return False
 
     def _complete(self, ass: Ass):
@@ -76,7 +82,7 @@ class RateLimitedQueue:
             return result
         except RetriableException as ex:
             if self._retries < self.max_retries:
-                logger.warning(f"{ass.filename}: {ex.message} - rescheduling")
+                logger.warning(f"{ass.filename}: rescheduling after - {ex.message}")
                 self._retries += 1
                 self._complete(ass)
                 return await self.queue_translation(ass)
