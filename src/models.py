@@ -1,10 +1,24 @@
 import os
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel
 
+class Config(BaseModel):
+    model: str
+    requests_per_minutes: int
+    token_per_minutes: int
+    max_concurrent_requests: Optional[int] = None
+    content_config: dict[str, Any]
+    outfile_suffix: str
+    max_retries: int
+
 class MisalignmentException(Exception):
     pass
+
+class RetriableException(Exception):
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
 
 class Dialogue(BaseModel):
     lines: list[str]
@@ -12,7 +26,6 @@ class Dialogue(BaseModel):
 class Ass(BaseModel):
     path: str
     filename: str
-    ext: str
     header: str
     fields: list[str]
     dialogue: Dialogue
@@ -54,15 +67,9 @@ class Ass(BaseModel):
         return Ass(
             path = path,
             filename=filename,
-            ext=ext,
             header=header,
             fields=fields,
             dialogue=dialogue)
 
     def __hash__(self):
         return hash(self.filename)
-
-class RetriableException(Exception):
-    def __init__(self, message: str):
-        self.message = message
-        super().__init__(message)
