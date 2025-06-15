@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from math import inf
 
 from src.gemini import GeminiClient
-from src.ass import *
+from src.models import *
 from src import logger
 
 @dataclass
@@ -51,10 +51,12 @@ class RateLimitedQueue:
             self._running += 1
             self._waiting_warning = False
             return True
+
         elif self._running == 0 and not self._waiting_warning:
             wait = self.wait_window + self._completed_log[0].utc - datetime.now(tz=timezone.utc)
             logger.warning(f"Waiting {wait.seconds} seconds for rate limits")
             self._waiting_warning = True
+
         return False
 
     def _complete(self, ass: Ass):
@@ -63,8 +65,9 @@ class RateLimitedQueue:
             LogEntry(datetime.now(tz=timezone.utc), ass.translation_tokens_estimate))
 
     async def queue_translation(self, ass: Ass) -> Ass:
+        dialogue_json = ass.dialogue.model_dump_json(indent=2)
         if not ass.translation_tokens_estimate:
-            ass.translation_tokens_estimate = int(self.client.estimate_question_tokens(ass)*2.1)
+            ass.translation_tokens_estimate = int(self.client.estimate_question_tokens(dialogue_json)*2.1)
 
         if ass.translation_tokens_estimate > self.tpm:
             raise Exception(f"{ass.filename}: Cannot translate, text too long")
@@ -77,9 +80,12 @@ class RateLimitedQueue:
             await asyncio.sleep(2)
 
         try:
-            result = await self.client.translate_ass(ass)
+            logger.info(f"{ass.filename}: calling Gemini")
+            result: Dialogue = (await self.client.ask_question(dialogue_json, Dialogue)).parsed
+            translated = ass.model_copy()
+            translated.dialogue = result
             self._complete(ass)
-            return result
+            return translated
         except RetriableException as ex:
             if self._retries < self.max_retries:
                 logger.warning(f"{ass.filename}: rescheduling after - {ex.message}")

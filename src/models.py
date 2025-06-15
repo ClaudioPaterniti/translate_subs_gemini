@@ -63,7 +63,6 @@ class Ass(BaseModel):
         return hash(self.filename)
 
 class RetriableException(Exception):
-    def __init__(self, ass: Ass, message: str):
-        self.ass = ass
+    def __init__(self, message: str):
         self.message = message
         super().__init__(message)

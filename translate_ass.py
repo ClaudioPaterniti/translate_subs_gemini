@@ -6,7 +6,7 @@ from collections.abc import Awaitable
 from typing import Any
 from pydantic import BaseModel
 
-from src.ass import *
+from src.models import *
 from src.gemini import GeminiClient
 from src.rate_limited_queue import RateLimitedQueue
 from src import logger

@@ -1,9 +1,10 @@
+from pydantic import BaseModel
+
 from google import genai
 from google.genai.errors import ClientError, ServerError
 from google.genai.types import GenerateContentResponse
 
-from src.ass import *
-from src import logger
+from src.models import RetriableException
 
 class GeminiClient:
 
@@ -17,41 +18,34 @@ class GeminiClient:
 
     async def ask_question(self,
             question: str, structure: BaseModel = None) -> GenerateContentResponse:
+
         config= self.config | {
             "response_mime_type": "application/json",
             "response_schema": structure
         } if structure is not None else self.config
-        response = await self.client.aio.models.generate_content(
-            model=self.model, contents=question,
-            config=config
-        )
-        return response
 
-    async def translate_ass(self, ass: Ass) -> Ass:
-        question = self.prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
-
-        logger.info(f"{ass.filename}: calling gemini")
         try:
-            response = await self.ask_question(question, Dialogue)
+            full_question = self.prompt + '\n' + question
+            response = await self.client.aio.models.generate_content(
+                model=self.model, contents=full_question,
+                config=config
+            )
         except (ClientError, ServerError) as ex:
             if ex.status in {'RESOURCE_EXHAUSTED', 'UNAVAILABLE'}:
-                raise RetriableException(ass, ex.message)
+                raise RetriableException(ex.message)
             else:
                 raise ex
 
-        translated: Dialogue = response.parsed
-        out = ass.model_copy()
-        out.dialogue = translated
-        return out
+        return response
 
-    async def compute_question_tokens(self, ass: Ass) -> int:
-        question = self.prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
+    async def compute_question_tokens(self, question: str) -> int:
+        question = self.prompt + '\n' + question
         response = await self.client.aio.models.count_tokens(
             model=self.model,
             contents=question,
         )
         return response.total_tokens
 
-    def estimate_question_tokens(self, ass: Ass) -> int:
-        question = self.prompt + '\n' + ass.dialogue.model_dump_json(indent=2)
+    def estimate_question_tokens(self, question: str) -> int:
+        question = self.prompt + '\n' + question
         return int(len(question)*0.5)
