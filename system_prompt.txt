@@ -1,4 +1,4 @@
-The following json contains dialogues from subtitles in .ass format divided in chunks of $dialogue_chunks_size lines each with structure as the following example:
+The following json contains dialogues from subtitles in .ass format divided in chunks of $dialogue_chunks_size lines each, with the following schema:
 {
     "chunks": [
         {
@@ -24,8 +24,8 @@ The following json contains dialogues from subtitles in .ass format divided in c
 }
 
 You have to translate the dialogues line by line from $original_language to $translate_to keeping the exact same structure, without splitting, deleting or creating any line.
-The output json should have the exact same number of chunks, and each chunk should have the lines of the original one.
+The output json should have the exact same number of chunks, and each chunk should have the same number of lines of the original one.
 
-Since dialogue comes from .ass subtitlies leave command between braces {...} unchanged.
+Since dialogues comes from .ass subtitlies, leave commands between braces {...} unchanged.
 
 Translate the following json from $original_language to $translate_to:
