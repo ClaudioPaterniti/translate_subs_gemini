@@ -23,6 +23,7 @@ def warning(s: str, save: bool = False):
     if save: saved_logs.append(Log(s, warning))
 
 def error(s: str, save: bool = False):
+    global failed
     console.print(Text(s, style='red'))
     if save:
         saved_logs.append(Log(s, error))

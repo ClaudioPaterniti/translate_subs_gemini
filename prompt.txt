@@ -1,7 +1,0 @@
-The following json contains a list of lines in english.
-Translate them line by line into italian without splitting, deleting or creating new lines.
-The output json should have the exact same number of lines of the original one.
-
-The text contains subtitles from One Piece, keep the original character names and proper nouns in the one piece context.
-
-Translate to italian the following json line by line:
