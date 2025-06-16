@@ -21,6 +21,7 @@ class RateLimitedQueue:
                  client: GeminiClient, max_context: int, requests_per_minute: int,
                  tokens_per_minute: int, max_retries: int, max_concurrent_requests: int = None,
                  wait_window: timedelta = timedelta(seconds=50)):
+
         self.client = client
         self.rpm = requests_per_minute
         self.max_context = max_context
@@ -111,7 +112,7 @@ class RateLimitedQueue:
 
         elif self._running == 0 and not self._waiting_warning:
             wait = self.wait_window + self._completed_log[0].utc - datetime.now(tz=timezone.utc)
-            logger.warning(f"Waiting {wait.seconds} seconds for rate limits")
+            logger.warning(f"Waiting {max(wait.seconds, 1)} seconds for rate limits")
             self._waiting_warning = True
 
         return False
