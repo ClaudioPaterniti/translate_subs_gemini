@@ -77,7 +77,8 @@ if __name__ == '__main__':
 
     max_retries = min(config.max_retries, len(to_translate))
     queue = RateLimitedQueue(
-        client, config.max_context_window, config.requests_per_minutes,
-        config.token_per_minutes, max_retries, config.max_concurrent_requests)
+        client, config.max_context_window, config.reduced_context_window,
+        config.requests_per_minutes, config.token_per_minutes, max_retries,
+        config.max_concurrent_requests)
 
     asyncio.run(main(queue, to_translate, config))

@@ -1,5 +1,7 @@
 import os
-from typing import Optional, Any
+import re
+from typing import Optional, Any, ClassVar
+from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
@@ -12,6 +14,7 @@ class Config(BaseModel):
     model: str = "gemini-2.0-flash"
     dialogue_chunks_size: int = 10
     max_context_window: int = 300000
+    reduced_context_window: int = 8000
     requests_per_minutes: int = 15
     token_per_minutes: int = 1000000
     max_concurrent_requests: Optional[int] = None
@@ -24,11 +27,14 @@ class MisalignmentException(Exception):
 class RetriableException(Exception):
     pass
 
+class InvalidJsonException(Exception):
+    pass
+
 class DialogueChunk(BaseModel):
     from_line: int
     to_line: int
     dialogue: list[str]
-    _fields: list[str]
+    _metadata: Any
     _translated: list[str]
 
 class DialogueChunks(BaseModel):
@@ -112,6 +118,20 @@ class SubsTranslation(BaseModel):
 
 class AssTranslation(SubsTranslation):
     header: str = None
+    command_regex: ClassVar[re.Pattern] = re.compile(r'\{[^{}]+\}')
+
+    @dataclass
+    class ChunkMetadata:
+        fields: list[str]
+        commands: dict[str, str]
+
+        def sub_commands(self, m: re.Match) -> str:
+            token = f"{{format {len(self.commands)}}}"
+            self.commands[token] = m.group(0)
+            return token
+
+        def restore_commands(self, m: re.Match) -> str:
+            return self.commands.get(m.group(0), '{}')
 
     def _load(self):
         with open(self.path, 'r', encoding='utf-8') as fp:
@@ -125,12 +145,17 @@ class AssTranslation(SubsTranslation):
             self.chunks.chunks.append(self._lines_to_chunk(i, splitted[i:i+self.chunk_size]))
 
     def _lines_to_chunk(self, from_line: int, lines: list[str]) -> 'DialogueChunk':
+        metadata = AssTranslation.ChunkMetadata(
+            fields=[','.join(l.split(',', 9)[:9]) for l in lines if l],
+            commands= {})
         chunk = DialogueChunk(
             from_line=from_line,
             to_line=from_line + len(lines) - 1,
-            dialogue = [''.join(l.split(',', 10)[9:]) for l in lines if l]
+            dialogue= [
+                self.command_regex.sub(metadata.sub_commands, l.split(',', 9)[9])
+                for l in lines if l]
         )
-        chunk._fields = [','.join(l.split(',', 10)[:9]) for l in lines if l]
+        chunk._metadata = metadata
         return chunk
 
     def _dump(self) -> str:
@@ -143,7 +168,10 @@ class AssTranslation(SubsTranslation):
             '\n'.join([self._chunk_to_lines(c) for c in self.chunks.chunks])
 
     def _chunk_to_lines(self, chunk: DialogueChunk) -> str:
-         return '\n'.join([f"{f},{l}" for f, l in zip(chunk._fields, chunk._translated)])
+         lines = [
+             self.command_regex.sub(chunk._metadata.restore_commands, l) for l in chunk._translated
+         ]
+         return '\n'.join([f"{f},{l}" for f, l in zip(chunk._metadata.fields, lines)])
 
 
 class SrtTranslation(SubsTranslation):
@@ -164,7 +192,7 @@ class SrtTranslation(SubsTranslation):
             to_line=from_line + len(splitted) - 1,
             dialogue = [l[-1] for l in splitted]
         )
-        chunk._fields = ['\n'.join(l[:2]) for l in splitted]
+        chunk._metadata = ['\n'.join(l[:2]) for l in splitted]
         return chunk
 
     def _dump(self) -> str:
@@ -175,4 +203,4 @@ class SrtTranslation(SubsTranslation):
         return '\n\n'.join([self._chunk_to_blocks(c) for c in self.chunks.chunks])
 
     def _chunk_to_blocks(self, chunk: DialogueChunk) -> str:
-         return '\n\n'.join([f"{f}\n{l}" for f, l in zip(chunk._fields, chunk._translated)])
+         return '\n\n'.join([f"{f}\n{l}" for f, l in zip(chunk._metadata, chunk._translated)])

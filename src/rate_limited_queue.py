@@ -18,13 +18,14 @@ class LogEntry:
 class RateLimitedQueue:
 
     def __init__(self,
-                 client: GeminiClient, max_context: int, requests_per_minute: int,
-                 tokens_per_minute: int, max_retries: int, max_concurrent_requests: int = None,
-                 wait_window: timedelta = timedelta(seconds=50)):
+            client: GeminiClient, max_context: int, reduced_context: int,
+            requests_per_minute: int, tokens_per_minute: int, max_retries: int,
+            max_concurrent_requests: int = None, wait_window: timedelta = timedelta(seconds=50)):
 
         self.client = client
         self.rpm = requests_per_minute
         self.max_context = max_context
+        self.reduced_context = reduced_context
         self.tpm = tokens_per_minute
         self.max_retries = max_retries
         self.max_concurrent_requests = max_concurrent_requests or inf
@@ -52,16 +53,16 @@ class RateLimitedQueue:
                         or self._running >= self.max_concurrent_requests): # to not load all files in memory at the same time
                     await asyncio.sleep(2)
                     self._clean_window()
-                tg.create_task(self.translate_file(file))
+                tg.create_task(self.translate_file(file, self.max_context))
                 await asyncio.sleep(0)
 
-    async def translate_file(self, subs: SubsTranslation):
+    async def translate_file(self, subs: SubsTranslation, max_context: int):
         try:
             chunks = subs.get_chunks()
             text = chunks.model_dump_json(indent=2)
             tokens = self.client.estimate_question_tokens(text)
-            if tokens > self.max_context:
-                split = int(ceil(tokens/self.max_context))
+            if tokens > max_context:
+                split = int(ceil(tokens/max_context))
                 chunks_n = int(ceil(len(chunks.chunks)/split))
                 chunks = [
                     DialogueChunks(chunks=chunks.chunks[i: i + chunks_n]).model_dump_json()
@@ -79,7 +80,15 @@ class RateLimitedQueue:
             subs.to_file()
 
         except* Exception as exs:
-            logger.error(f"{subs.filename}: {exs.exceptions[0]}",  True)
+            if (
+                all(isinstance(ex, InvalidJsonException) for ex in exs.exceptions)
+                and max_context > self.reduced_context
+            ):
+                logger.warning(f"{subs.filename}: Gemini returned an invalid json, retrying with reduced context window")
+                self._retries += 1
+                await self.translate_file(subs, self.reduced_context)
+            else:
+                logger.error(f"{subs.filename}: {exs.exceptions[0]}",  True)
 
     async def _handle_misalignments(self, subs: SubsTranslation):
         misaligned = subs.get_misaligned_chunks()
@@ -136,7 +145,7 @@ class RateLimitedQueue:
             logger.info(f"{chunks_id}: calling Gemini")
             result: DialogueChunks = (await self.client.ask_question(chunks, DialogueChunks)).parsed
             if result is None:
-                raise Exception("Gemini response could not be parsed")
+                raise InvalidJsonException("Gemini response could not be parsed")
             self._complete(tokens)
             return result
         except RetriableException as ex:
