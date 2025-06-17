@@ -84,7 +84,7 @@ class RateLimitedQueue:
     async def _handle_misalignments(self, ass: AssTranslation):
         misaligned = ass.get_misaligned_chunks()
         if misaligned.chunks:
-            text = misaligned.model_dump_json()
+            text = misaligned.model_dump_json(indent=2)
             tokens = self.client.estimate_question_tokens(text)
             if tokens > self.max_context:
                 raise MisalignmentException(f"{ass.filename}: result translation did no match original structure")
@@ -135,6 +135,8 @@ class RateLimitedQueue:
         try:
             logger.info(f"{chunks_id}: calling Gemini")
             result: DialogChunks = (await self.client.ask_question(chunks, DialogChunks)).parsed
+            if result is None:
+                raise Exception("Gemini response could not be parsed")
             self._complete(tokens)
             return result
         except RetriableException as ex:

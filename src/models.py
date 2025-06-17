@@ -94,10 +94,10 @@ class AssTranslation(BaseModel):
         if len(chunks.chunks) != len(self.misaligned_chunks):
             return
         temp_misaligned = []
-        for i in self.misaligned_chunks:
-            original, translated = self.chunks.chunks[i], chunks.chunks[i]
+        for i, index in enumerate(self.misaligned_chunks):
+            original, translated = self.chunks.chunks[index], chunks.chunks[i]
             if len(original.dialogue) != len(translated.dialogue):
-                temp_misaligned.append(i)
+                temp_misaligned.append(index)
                 diff = len(original.dialogue) - len(translated.dialogue)
                 if diff > 0:
                     translated.dialogue.extend(original.dialogue[-diff:])
