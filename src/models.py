@@ -101,6 +101,7 @@ class SubsTranslation(BaseModel):
                 'w+', encoding='utf-8-sig') as fp:
             fp.write(text)
         logger.success(f"{self.filename}: Generated {self.out_path}", True)
+        del self.chunks
 
     @staticmethod
     def from_file(file_path: str, out_path: str, chunk_size: int = 10) -> 'SubsTranslation':
