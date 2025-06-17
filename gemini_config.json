@@ -1,11 +1,11 @@
 {
-    "model": "gemini-2.0-flash",
+    "model": "gemini-2.0-flash-lite",
     "original_language": "english",
     "translate_to": "italian",
     "requests_per_minutes": 15,
     "dialogue_chunks_size": 10,
     "token_per_minutes": 1000000,
-    "max_context_window": 100000,
+    "max_context_window": 10000,
     "content_config": {
         "temperature": 0.0
     },
