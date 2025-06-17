@@ -1,4 +1,4 @@
-$script_path = Join-Path $PSScriptRoot "./translate_ass.py"
+$script_path = Join-Path $PSScriptRoot "./translate_subs.py"
 $env_path = Join-Path $PSScriptRoot ".\.venv\Scripts\Activate.ps1"
 & $env_path
 

@@ -44,56 +44,56 @@ class RateLimitedQueue:
             self._minute_tokens -= self._completed_log.popleft().tokens
             self._minute_requests -= 1
 
-    async def translate_all(self, to_translate: list[AssTranslation]):
+    async def translate_all(self, to_translate: list[SubsTranslation]):
         async with asyncio.TaskGroup() as tg:
-            for ass in to_translate:
+            for file in to_translate:
                 while (
                         self._minute_requests >= self.rpm
                         or self._running >= self.max_concurrent_requests): # to not load all files in memory at the same time
                     await asyncio.sleep(2)
                     self._clean_window()
-                tg.create_task(self.translate_ass(ass))
+                tg.create_task(self.translate_file(file))
                 await asyncio.sleep(0)
 
-    async def translate_ass(self, ass: AssTranslation):
+    async def translate_file(self, subs: SubsTranslation):
         try:
-            chunks = ass.get_chunks()
+            chunks = subs.get_chunks()
             text = chunks.model_dump_json(indent=2)
             tokens = self.client.estimate_question_tokens(text)
             if tokens > self.max_context:
                 split = int(ceil(tokens/self.max_context))
                 chunks_n = int(ceil(len(chunks.chunks)/split))
                 chunks = [
-                    DialogChunks(chunks=chunks.chunks[i: i + chunks_n]).model_dump_json()
+                    DialogueChunks(chunks=chunks.chunks[i: i + chunks_n]).model_dump_json()
                     for i in range(0, len(chunks.chunks), chunks_n)]
-                chunk_id = f"{ass.filename} - part {{}}"
+                chunk_id = f"{subs.filename} - part {{}}"
             else:
                 chunks = [text]
-                chunk_id = ass.filename
+                chunk_id = subs.filename
 
             tasks = [self._translate_chunks(chunk_id.format(i+1), chunk) for i,chunk in enumerate(chunks)]
             results = await asyncio.gather(*tasks)
             translated_chunks = list(chain.from_iterable([c.chunks for c in results]))
-            ass.add_translation(DialogChunks(chunks= translated_chunks))
-            await self._handle_misalignments(ass)
-            ass.to_file()
+            subs.add_translation(DialogueChunks(chunks= translated_chunks))
+            await self._handle_misalignments(subs)
+            subs.to_file()
 
         except* Exception as exs:
-            logger.error(f"{ass.filename}: {exs.exceptions[0]}",  True)
+            logger.error(f"{subs.filename}: {exs.exceptions[0]}",  True)
 
-    async def _handle_misalignments(self, ass: AssTranslation):
-        misaligned = ass.get_misaligned_chunks()
+    async def _handle_misalignments(self, subs: SubsTranslation):
+        misaligned = subs.get_misaligned_chunks()
         if misaligned.chunks:
             text = misaligned.model_dump_json(indent=2)
             tokens = self.client.estimate_question_tokens(text)
             if tokens > self.max_context:
-                raise MisalignmentException(f"{ass.filename}: result translation did no match original structure")
+                raise MisalignmentException(f"{subs.filename}: result translation did no match original structure")
 
             logger.warning(
-                f"{ass.filename}: result translation has some line misalignment, trying correction")
+                f"{subs.filename}: result translation has some line misalignment, trying correction")
 
-            result = await self._translate_chunks(f"{ass.filename} corrections", text)
-            ass.apply_corrections(result)
+            result = await self._translate_chunks(f"{subs.filename} corrections", text)
+            subs.apply_corrections(result)
 
     def _try_start(self, tokens_n: int) -> bool:
 
@@ -122,7 +122,7 @@ class RateLimitedQueue:
         self._completed_log.append(
             LogEntry(datetime.now(tz=timezone.utc), tokens_n))
 
-    async def _translate_chunks(self, chunks_id: str, chunks: str) -> DialogChunks:
+    async def _translate_chunks(self, chunks_id: str, chunks: str) -> DialogueChunks:
         tokens = int(self.client.estimate_question_tokens(chunks)*2.1)
 
         queued = False
@@ -134,7 +134,7 @@ class RateLimitedQueue:
 
         try:
             logger.info(f"{chunks_id}: calling Gemini")
-            result: DialogChunks = (await self.client.ask_question(chunks, DialogChunks)).parsed
+            result: DialogueChunks = (await self.client.ask_question(chunks, DialogueChunks)).parsed
             if result is None:
                 raise Exception("Gemini response could not be parsed")
             self._complete(tokens)

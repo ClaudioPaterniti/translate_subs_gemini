@@ -19,15 +19,15 @@ def translated_path(file_path: str, suffix: str) -> str:
     return full_path
 
 async def main(queue: RateLimitedQueue, file_paths: list[str], config: Config):
-    asses = []
+    files = []
     for file_path in file_paths:
         try:
             out_path = translated_path(file_path, config.outfile_suffix)
-            asses.append(AssTranslation.from_file(file_path, out_path, config.dialogue_chunks_size))
+            files.append(SubsTranslation.from_file(file_path, out_path, config.dialogue_chunks_size))
         except Exception as ex:
             logger.error(f"{file_path} failed: {ex}", True)
 
-    await queue.translate_all(asses)
+    await queue.translate_all(files)
 
     logger.info(f'\nTerminated')
     logger.print_final_log()
@@ -57,16 +57,16 @@ if __name__ == '__main__':
 
     if len(sys.argv) == 2 and os.path.isdir(sys.argv[1]):
         folder = sys.argv[1]
-        file_paths = glob(f'{folder}/*.ass')
+        file_paths = glob(f'{folder}/*.ass') + glob(f'{folder}/*.srt')
     else:
-        file_paths = [f for f in sys.argv[1:] if f.endswith('.ass')]
+        file_paths = [f for f in sys.argv[1:] if f.endswith('.ass') or f.endswith('.srt')]
         folder, _ = os.path.split(file_paths[0])
 
 
-    translated = glob(f'{folder}/*{config.outfile_suffix}.ass')
+    translated = glob(f'{folder}/*{config.outfile_suffix}.ass') + glob(f'{folder}/*{config.outfile_suffix}.srt')
 
     to_translate = [f for f in file_paths
-                    if not f.endswith(f'{config.outfile_suffix}.ass')
+                    if not f[:-4].endswith(f'{config.outfile_suffix}')
                     and translated_path(f, config.outfile_suffix) not in translated]
 
     if not to_translate:

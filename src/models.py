@@ -31,50 +31,31 @@ class DialogueChunk(BaseModel):
     _fields: list[str]
     _translated: list[str]
 
-    @staticmethod
-    def from_ass_lines(from_line: int, lines: list[str]) -> 'DialogueChunk':
-        chunk = DialogueChunk(
-            from_line=from_line,
-            to_line=from_line + len(lines) - 1,
-            dialogue = [''.join(l.split(',', 10)[9:]) for l in lines if l]
-        )
-        chunk._fields = [','.join(l.split(',', 10)[:9]) for l in lines if l]
-        return chunk
-
-    def get_translated_ass_line(self) -> str:
-         return '\n'.join([f"{f},{l}" for f, l in zip(self._fields, self._translated)])
-
-class DialogChunks(BaseModel):
+class DialogueChunks(BaseModel):
     chunks: list[DialogueChunk]
 
-class AssTranslation(BaseModel):
+class SubsTranslation(BaseModel):
     path: str
     folder: str
     filename: str
     out_path: str
     chunk_size: int = 10
-    header: str = None
-    chunks: DialogChunks = DialogChunks(chunks=[])
+    chunks: DialogueChunks = DialogueChunks(chunks=[])
     misaligned_chunks: list[int] = []
     translation_tokens_estimate: int = None
 
     def _load(self):
-        with open(self.path, 'r', encoding='utf-8') as fp:
-            text = fp.read()
+        raise NotImplementedError()
 
-        splitted = text.split('Dialogue:', 1)
-        self.header = splitted[0]
-        text = 'Dialogue: '+ splitted[1].strip()
-        splitted =  text.split('\n')
-        for i in range(0, len(splitted), self.chunk_size):
-            self.chunks.chunks.append(DialogueChunk.from_ass_lines(i, splitted[i:i+self.chunk_size]))
+    def _dump(self) -> str:
+        raise NotImplementedError()
 
-    def get_chunks(self) -> DialogChunks:
-        if not self.header:
+    def get_chunks(self) -> DialogueChunks:
+        if not self.chunks.chunks:
             self._load()
         return self.chunks
 
-    def add_translation(self, chunks: DialogChunks):
+    def add_translation(self, chunks: DialogueChunks):
         if len(chunks.chunks) != len(self.chunks.chunks):
             raise MisalignmentException("The number of translated chunks returned does not match original chunks")
         for i, (original, translated) in enumerate(zip(self.chunks.chunks, chunks.chunks)):
@@ -87,10 +68,10 @@ class AssTranslation(BaseModel):
                     translated.dialogue = translated.dialogue[:-diff]
             original._translated = translated.dialogue
 
-    def get_misaligned_chunks(self) -> DialogChunks:
-        return DialogChunks(chunks=[self.chunks.chunks[i] for i in self.misaligned_chunks])
+    def get_misaligned_chunks(self) -> DialogueChunks:
+        return DialogueChunks(chunks=[self.chunks.chunks[i] for i in self.misaligned_chunks])
 
-    def apply_corrections(self, chunks: DialogChunks):
+    def apply_corrections(self, chunks: DialogueChunks):
         if len(chunks.chunks) != len(self.misaligned_chunks):
             return
         temp_misaligned = []
@@ -108,22 +89,90 @@ class AssTranslation(BaseModel):
 
     def to_file(self, path = None) -> str:
         out_path = path or self.out_path
-        message = f"{self.filename}: Generated {self.out_path}"
-        if self.misaligned_chunks:
-            misalignments = [f"{self.chunk_size*i}-{self.chunk_size*(i+1)}" for i in self.misaligned_chunks]
-            logger.warning(message + f" - misilignments at lines [{', '.join(misalignments)}]", True)
-        else:
-            logger.success(message, True)
-        text =  self.header +\
-            '\n'.join([c.get_translated_ass_line() for c in self.chunks.chunks])
+        text = self._dump()
         with open(
                 out_path,
                 'w+', encoding='utf-8-sig') as fp:
             fp.write(text)
+        logger.success(f"{self.filename}: Generated {self.out_path}", True)
 
     @staticmethod
-    def from_file(file_path: str, out_path: str, chunk_size: int = 10) -> 'AssTranslation':
+    def from_file(file_path: str, out_path: str, chunk_size: int = 10) -> 'SubsTranslation':
         folder, filename = os.path.split(file_path)
-        return AssTranslation(
-            path = file_path, folder=folder,
-            filename=filename, out_path=out_path, chunk_size=chunk_size)
+        if filename.endswith('.ass'):
+            return AssTranslation(
+                path = file_path, folder=folder,
+                filename=filename, out_path=out_path, chunk_size=chunk_size
+            )
+        else:
+            return SrtTranslation(
+                path = file_path, folder=folder,
+                filename=filename, out_path=out_path, chunk_size=chunk_size
+            )
+
+class AssTranslation(SubsTranslation):
+    header: str = None
+
+    def _load(self):
+        with open(self.path, 'r', encoding='utf-8') as fp:
+            text = fp.read()
+
+        splitted = text.split('Dialogue:', 1)
+        self.header = splitted[0]
+        text = 'Dialogue: '+ splitted[1].strip()
+        splitted =  text.split('\n')
+        for i in range(0, len(splitted), self.chunk_size):
+            self.chunks.chunks.append(self._lines_to_chunk(i, splitted[i:i+self.chunk_size]))
+
+    def _lines_to_chunk(self, from_line: int, lines: list[str]) -> 'DialogueChunk':
+        chunk = DialogueChunk(
+            from_line=from_line,
+            to_line=from_line + len(lines) - 1,
+            dialogue = [''.join(l.split(',', 10)[9:]) for l in lines if l]
+        )
+        chunk._fields = [','.join(l.split(',', 10)[:9]) for l in lines if l]
+        return chunk
+
+    def _dump(self) -> str:
+        if self.misaligned_chunks:
+            offset = self.header.count('\n') + 1
+            misalignments = [f"{offset + self.chunk_size*i}-{offset + self.chunk_size*(i+1)}" for i in self.misaligned_chunks]
+            logger.warning(f"{self.filename} - misilignments at lines [{', '.join(misalignments)}]", True)
+
+        return self.header +\
+            '\n'.join([self._chunk_to_lines(c) for c in self.chunks.chunks])
+
+    def _chunk_to_lines(self, chunk: DialogueChunk) -> str:
+         return '\n'.join([f"{f},{l}" for f, l in zip(chunk._fields, chunk._translated)])
+
+
+class SrtTranslation(SubsTranslation):
+
+    def _load(self):
+        with open(self.path, 'r', encoding='utf-8') as fp:
+            text = fp.read()
+
+        blocks = text.split('\n\n')
+        splitted = [b.split('\n', 2) for b in blocks]
+
+        for i in range(0, len(splitted), self.chunk_size):
+            self.chunks.chunks.append(self._lines_to_chunk(i, splitted[i:i+self.chunk_size]))
+
+    def _lines_to_chunk(self, from_line: int, splitted: list[list[str]]) -> 'DialogueChunk':
+        chunk = DialogueChunk(
+            from_line=from_line,
+            to_line=from_line + len(splitted) - 1,
+            dialogue = [l[-1] for l in splitted]
+        )
+        chunk._fields = ['\n'.join(l[:2]) for l in splitted]
+        return chunk
+
+    def _dump(self) -> str:
+        if self.misaligned_chunks:
+            misalignments = [f"{self.chunk_size*i}-{self.chunk_size*(i+1)}" for i in self.misaligned_chunks]
+            logger.warning(f"{self.filename} - misilignments at blocks [{', '.join(misalignments)}]", True)
+
+        return '\n\n'.join([self._chunk_to_blocks(c) for c in self.chunks.chunks])
+
+    def _chunk_to_blocks(self, chunk: DialogueChunk) -> str:
+         return '\n\n'.join([f"{f}\n{l}" for f, l in zip(chunk._fields, chunk._translated)])
