@@ -1,6 +1,11 @@
-$py_version = python -V
-if (!$py_version.StartsWith("Python")){
-    Write-Error "Python not installed"
+$pythonAvailable = $false
+try {
+    $output = python --version 2>&1
+    $pythonAvailable = $LASTEXITCODE -eq 0
+} finally {}
+
+if (!$pythonAvailable){
+    Write-Error "Python not installed: install python and add it to PATH"
     Read-Host -Prompt "Press Enter to exit"
     Exit
 }
