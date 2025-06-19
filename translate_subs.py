@@ -75,7 +75,7 @@ if __name__ == '__main__':
 
     client = GeminiClient(key, config.model, prompt, config.content_config)
 
-    max_retries = min(config.max_retries, len(to_translate))
+    max_retries = config.max_retries
     queue = RateLimitedQueue(
         client, config.max_context_window, config.reduced_context_window,
         config.requests_per_minutes, config.token_per_minutes, max_retries,

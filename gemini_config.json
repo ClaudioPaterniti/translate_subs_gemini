@@ -5,7 +5,7 @@
     "requests_per_minutes": 15,
     "dialogue_chunks_size": 10,
     "token_per_minutes": 1000000,
-    "max_context_window": 20000,
+    "max_context_window": 15000,
     "reduced_context_window": 8000,
     "content_config": {
         "temperature": 0.0
