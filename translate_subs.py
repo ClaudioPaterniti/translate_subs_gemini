@@ -1,10 +1,10 @@
 import os
 import sys
 import asyncio
+import glob
 
 from collections.abc import Awaitable
 from string import Template
-from glob import glob
 
 from src.models import *
 from src.gemini import GeminiClient
@@ -56,14 +56,14 @@ if __name__ == '__main__':
     prompt = user_prompt + '\n' + system_prompt
 
     if len(sys.argv) == 2 and os.path.isdir(sys.argv[1]):
-        folder = sys.argv[1]
-        file_paths = glob(f'{folder}/*.ass') + glob(f'{folder}/*.srt')
+        folder = glob.escape(sys.argv[1])
+        file_paths = glob.glob(f'{folder}/*.ass') + glob.glob(f'{folder}/*.srt')
     else:
         file_paths = [f for f in sys.argv[1:] if f.endswith('.ass') or f.endswith('.srt')]
         folder, _ = os.path.split(file_paths[0])
+        folder = glob.escape(folder)
 
-
-    translated = glob(f'{folder}/*{config.outfile_suffix}.ass') + glob(f'{folder}/*{config.outfile_suffix}.srt')
+    translated = glob.glob(f'{folder}/*{config.outfile_suffix}.ass') + glob.glob(f'{folder}/*{config.outfile_suffix}.srt')
 
     to_translate = [f for f in file_paths
                     if not f[:-4].endswith(f'{config.outfile_suffix}')
