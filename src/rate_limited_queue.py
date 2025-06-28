@@ -143,6 +143,7 @@ class RateLimitedQueue:
         try:
             logger.info(f"{chunk_id}: calling Gemini")
             result: DialogueChunks = (await self.client.ask_question(text, DialogueChunks)).parsed
+            self._complete(tokens)
             if result is None:
                 if tokens > self.reduced_context and self._retries < self.max_retries:
                     logger.warning(f"{chunk_id}: Gemini returned an invalid json, retrying with reduced context window")
@@ -154,13 +155,12 @@ class RateLimitedQueue:
                     result = self._flatten_chunks([t.result() for t in tasks])
                 else:
                     raise InvalidJsonException("Gemini response could not be parsed")
-            self._complete(tokens)
             return result
         except RetriableException as ex:
+            self._complete(tokens)
             if self._retries < self.max_retries:
                 logger.warning(f"{chunk_id}: rescheduling after - {ex}")
                 self._retries += 1
-                self._complete(tokens)
                 return await self._call_llm(chunk_id, text)
             else:
                 self._complete(tokens)
