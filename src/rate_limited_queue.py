@@ -8,7 +8,7 @@ from itertools import chain
 
 from src.gemini import GeminiClient
 from src.models import *
-from src import logger
+from src.logger import Logger
 
 @dataclass
 class LogEntry:
@@ -20,7 +20,8 @@ class RateLimitedQueue:
     def __init__(self,
             client: GeminiClient, max_context: int, reduced_context: int,
             requests_per_minute: int, tokens_per_minute: int, max_retries: int,
-            max_concurrent_requests: int = None, wait_window: timedelta = timedelta(seconds=50)):
+            max_concurrent_requests: int = None, wait_window: timedelta = timedelta(seconds=50),
+            logger: Logger = None):
 
         self.client = client
         self.rpm = requests_per_minute
@@ -30,6 +31,7 @@ class RateLimitedQueue:
         self.max_retries = max_retries
         self.max_concurrent_requests = max_concurrent_requests or inf
         self.wait_window = wait_window
+        self.logger = logger or Logger()
 
         self._retries = 0
         self._minute_tokens = 0
@@ -62,19 +64,22 @@ class RateLimitedQueue:
 
     async def translate_file(self, subs: SubsTranslation):
         try:
-            chunks = subs.get_chunks()
-            chunks = self._split(chunks, self.max_context)
+            try:
+                chunks = subs.get_chunks()
+                chunks = self._split(chunks, self.max_context)
 
-            chunk_id = f"{subs.filename} - part {{}}" if len(chunks) > 1 else subs.filename
-            async with asyncio.TaskGroup() as tg:
-                tasks = [tg.create_task(self._call_llm(chunk_id.format(i+1), chunk))
-                         for i,chunk in enumerate(chunks)]
-            subs.add_translation(self._flatten_chunks([t.result() for t in tasks]))
-            await self._handle_misalignments(subs)
-            subs.to_file()
+                chunk_id = f"{subs.filename} - part {{}}" if len(chunks) > 1 else subs.filename
+                async with asyncio.TaskGroup() as tg:
+                    tasks = [tg.create_task(self._call_llm(chunk_id.format(i+1), chunk))
+                            for i,chunk in enumerate(chunks)]
+                subs.add_translation(self._flatten_chunks([t.result() for t in tasks]))
+                await self._handle_misalignments(subs)
+                subs.to_file()
 
-        except* Exception as exs:
-            logger.error(f"{subs.filename}: {exs.exceptions[0]}",  True)
+            except* Exception as exs:
+                self.logger.error(f"{subs.filename}: {exs.exceptions[0]}",  save=True)
+        except Exception as ex:
+            self.logger.error(f"{subs.filename}: {ex}", save=True)
 
 
     async def _handle_misalignments(self, subs: SubsTranslation):
@@ -85,7 +90,7 @@ class RateLimitedQueue:
             if tokens > self.max_context:
                 raise MisalignmentException(f"{subs.filename}: result translation did no match original structure")
 
-            logger.warning(
+            self.logger.warning(
                 f"{subs.filename}: result translation has some line misalignment, trying correction")
 
             result = await self._call_llm(f"{subs.filename} corrections", misaligned)
@@ -119,15 +124,16 @@ class RateLimitedQueue:
 
         elif self._running == 0 and not self._waiting_warning:
             wait = self.wait_window + self._completed_log[0].utc - datetime.now(tz=timezone.utc)
-            logger.warning(f"Waiting {max(wait.seconds, 1)} seconds for rate limits")
+            self.logger.warning(f"Waiting {max(wait.seconds, 1)} seconds for rate limits")
             self._waiting_warning = True
 
         return False
 
-    def _complete(self, tokens_n: int):
+    def _complete(self, tokens_n: int) -> bool:
         self._running -= 1
         self._completed_log.append(
             LogEntry(datetime.now(tz=timezone.utc), tokens_n))
+        return True
 
     async def _call_llm(self, chunk_id: str, chunks: DialogueChunks) -> DialogueChunks:
         text = chunks.model_dump_json(indent=2)
@@ -137,32 +143,39 @@ class RateLimitedQueue:
         while not self._try_start(tokens):
             if not queued:
                 queued = True
-                logger.info(f"{chunk_id}: in queue")
+                self.logger.info(f"{chunk_id}: in queue")
             await asyncio.sleep(2)
 
+        complete = False
         try:
-            logger.info(f"{chunk_id}: calling Gemini")
+            self.logger.info(f"{chunk_id}: calling Gemini")
             result: DialogueChunks = (await self.client.ask_question(text, DialogueChunks)).parsed
-            self._complete(tokens)
+            complete = self._complete(tokens)
             if result is None:
                 if tokens > self.reduced_context and self._retries < self.max_retries:
-                    logger.warning(f"{chunk_id}: Gemini returned an invalid json, retrying with reduced context window")
-                    chunks = self._split(chunks, self.reduced_context)
-                    self._retries += len(chunks)
-                    async with asyncio.TaskGroup() as tg:
-                        tasks = [tg.create_task(self._call_llm(f'{chunk_id}.{i}', chunk))
-                            for i, chunk in enumerate(chunks)]
-                    result = self._flatten_chunks([t.result() for t in tasks])
+                    await self._handle_unparseable_response(chunk_id, chunks)
                 else:
                     raise InvalidJsonException("Gemini response could not be parsed")
             return result
+
         except RetriableException as ex:
-            self._complete(tokens)
+            if not complete: complete = self._complete(tokens)
             if self._retries < self.max_retries:
-                logger.warning(f"{chunk_id}: rescheduling after - {ex}")
+                self.logger.warning(f"{chunk_id}: rescheduling after - {ex}")
                 self._retries += 1
                 return await self._call_llm(chunk_id, text)
-            else:
-                self._complete(tokens)
-                raise ex
+            else: raise ex
 
+        except:
+            if not complete: complete = self._complete(tokens)
+            raise
+
+    async def _handle_unparseable_response(self,
+            chunk_id: str, chunks: DialogueChunks) -> DialogueChunks:
+        self.logger.warning(f"{chunk_id}: Gemini returned an invalid json, retrying with reduced context window")
+        chunks = self._split(chunks, self.reduced_context)
+        self._retries += len(chunks)
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(self._call_llm(f'{chunk_id}.{i}', chunk))
+                for i, chunk in enumerate(chunks)]
+        return self._flatten_chunks([t.result() for t in tasks])

@@ -9,7 +9,7 @@ from string import Template
 from src.models import *
 from src.gemini import GeminiClient
 from src.rate_limited_queue import RateLimitedQueue
-from src import logger
+from src.logger import Logger
 
 def translated_path(file_path: str, suffix: str) -> str:
     path, file = os.path.split(file_path)
@@ -18,23 +18,26 @@ def translated_path(file_path: str, suffix: str) -> str:
     full_path = os.path.join(path, out_file_name)
     return full_path
 
-async def main(queue: RateLimitedQueue, file_paths: list[str], config: Config):
+async def main(queue: RateLimitedQueue, file_paths: list[str], config: Config, logger: Logger):
     files = []
     for file_path in file_paths:
         try:
             out_path = translated_path(file_path, config.outfile_suffix)
-            files.append(SubsTranslation.from_file(file_path, out_path, config.dialogue_chunks_size))
+            files.append(SubsTranslation.from_file(
+                file_path, out_path, config.dialogue_chunks_size, logger))
         except Exception as ex:
-            logger.error(f"{file_path} failed: {ex}", True)
+            logger.error(f"{file_path} failed: {ex}", save=True)
 
     await queue.translate_all(files)
 
-    logger.info(f'\nTerminated')
+    print('\n')
+    logger.info(f'Terminated - final log:')
     logger.print_final_log()
 
 
 if __name__ == '__main__':
 
+    rich_logger = Logger()
     script_path = os.path.abspath(os.path.split(__file__)[0])
     key = os.environ.get('GEMINI_KEY')
     if key is None and os.path.exists(os.path.join(script_path, 'gemini.key')):
@@ -42,7 +45,7 @@ if __name__ == '__main__':
                 key = key_fp.read()
 
     if not key:
-        logger.error("Could not retrieve gemini key, populate env variable GEMINI_KEY or file gemini.key")
+        rich_logger.error("Could not retrieve gemini key, populate env variable GEMINI_KEY or file gemini.key")
         sys.exit()
 
     with (
@@ -53,6 +56,7 @@ if __name__ == '__main__':
         config = Config.model_validate_json(config_fp.read())
         user_prompt = user_prompt_fp.read()
         system_prompt = Template(system_prompt_fp.read()).substitute(dict(config))
+
     prompt = user_prompt + '\n' + system_prompt
 
     if len(sys.argv) == 2 and os.path.isdir(sys.argv[1]):
@@ -70,15 +74,27 @@ if __name__ == '__main__':
                     and translated_path(f, config.outfile_suffix) not in translated]
 
     if not to_translate:
-        logger.warning("Found no file to translate, already translated files are ignored.")
+        rich_logger.warning("Found no file to translate, already translated files are ignored.")
         sys.exit()
 
-    client = GeminiClient(key, config.model, prompt, config.content_config)
+    client = GeminiClient(
+        key=key,
+        model=config.model,
+        prompt=prompt,
+        config=config.content_config,
+        logger=rich_logger
+    )
 
     max_retries = config.max_retries
     queue = RateLimitedQueue(
-        client, config.max_context_window, config.reduced_context_window,
-        config.requests_per_minutes, config.token_per_minutes, max_retries,
-        config.max_concurrent_requests)
+        client=client,
+        max_context=config.max_context_window,
+        reduced_context=config.reduced_context_window,
+        requests_per_minute=config.requests_per_minutes,
+        tokens_per_minute=config.token_per_minutes,
+        max_retries=max_retries,
+        max_concurrent_requests=config.max_concurrent_requests,
+        logger=rich_logger
+    )
 
-    asyncio.run(main(queue, to_translate, config))
+    asyncio.run(main(queue, to_translate, config, rich_logger))

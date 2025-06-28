@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
-from src import logger
+from src.logger import Logger
 
 class Config(BaseModel):
     original_language: str
@@ -49,6 +49,7 @@ class SubsTranslation(BaseModel):
     chunks: DialogueChunks = DialogueChunks(chunks=[])
     misaligned_chunks: list[int] = []
     translation_tokens_estimate: int = None
+    _logger: Logger
 
     def _load(self):
         raise NotImplementedError()
@@ -100,22 +101,24 @@ class SubsTranslation(BaseModel):
                 out_path,
                 'w+', encoding='utf-8-sig') as fp:
             fp.write(text)
-        logger.success(f"{self.filename}: Generated {self.out_path}", True)
+        self._logger.success(f"{self.filename}: Generated {self.out_path}", save=True)
         del self.chunks
 
     @staticmethod
-    def from_file(file_path: str, out_path: str, chunk_size: int = 10) -> 'SubsTranslation':
+    def from_file(file_path: str, out_path: str, chunk_size: int = 10, logger: Logger = None) -> 'SubsTranslation':
         folder, filename = os.path.split(file_path)
         if filename.endswith('.ass'):
-            return AssTranslation(
+            t =  AssTranslation(
                 path = file_path, folder=folder,
                 filename=filename, out_path=out_path, chunk_size=chunk_size
             )
         else:
-            return SrtTranslation(
+            t = SrtTranslation(
                 path = file_path, folder=folder,
                 filename=filename, out_path=out_path, chunk_size=chunk_size
             )
+        t._logger = logger or Logger()
+        return t
 
 class AssTranslation(SubsTranslation):
     header: str = None
@@ -163,7 +166,7 @@ class AssTranslation(SubsTranslation):
         if self.misaligned_chunks:
             offset = self.header.count('\n') + 1
             misalignments = [f"{offset + self.chunk_size*i}-{offset + self.chunk_size*(i+1)}" for i in self.misaligned_chunks]
-            logger.warning(f"{self.filename} - misilignments at lines [{', '.join(misalignments)}]", True)
+            self._logger.warning(f"{self.filename} - misilignments at lines [{', '.join(misalignments)}]", save=True)
 
         return self.header +\
             '\n'.join([self._chunk_to_lines(c) for c in self.chunks.chunks])
@@ -199,7 +202,7 @@ class SrtTranslation(SubsTranslation):
     def _dump(self) -> str:
         if self.misaligned_chunks:
             misalignments = [f"{self.chunk_size*i}-{self.chunk_size*(i+1)}" for i in self.misaligned_chunks]
-            logger.warning(f"{self.filename} - misilignments at blocks [{', '.join(misalignments)}]", True)
+            self._logger.warning(f"{self.filename} - misilignments at blocks [{', '.join(misalignments)}]", save=True)
 
         return '\n\n'.join([self._chunk_to_blocks(c) for c in self.chunks.chunks])
 

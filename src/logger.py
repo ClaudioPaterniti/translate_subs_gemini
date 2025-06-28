@@ -1,36 +1,57 @@
 from dataclasses import dataclass
-from typing import Callable
+from enum import Enum
+from typing import List
+from datetime import datetime
 
 from rich.console import Console, Text
 
+class LogLevel(Enum):
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
+
 @dataclass
-class Log: s: str; level_call: Callable[[str], None]
+class Log:
+    message: str
+    level: LogLevel
 
-console = Console()
-saved_logs: list[Log] = []
-failed = 0
+LEVEL_STYLES = {
+    LogLevel.INFO: "white",
+    LogLevel.SUCCESS: "green",
+    LogLevel.WARNING: "orange3",
+    LogLevel.ERROR: "red",
+}
 
-def info(s: str, save: bool = False):
-    console.print(Text(s, style='white'))
-    if save: saved_logs.append(Log(s, info))
+class Logger:
+    def __init__(self):
+        self.console = Console()
+        self.saved_logs: List[Log] = []
+        self.failed = 0
 
-def success(s: str, save: bool = False):
-    console.print(Text(s, style='green'))
-    if save: saved_logs.append(Log(s, success))
+    def log(self, level: LogLevel, message: str, timestamped: bool = True, save: bool = False):
+        timestamp = datetime.now().strftime("[%H:%M:%S] - ") if timestamped else ''
+        style = LEVEL_STYLES.get(level, "white")
+        self.console.print(Text(timestamp, style="grey50") + Text(message, style=style))
+        if save:
+            self.saved_logs.append(Log(message, level))
+            if level == LogLevel.ERROR:
+                self.failed += 1
 
-def warning(s: str, save: bool = False):
-    console.print(Text(s, style='orange3'))
-    if save: saved_logs.append(Log(s, warning))
+    def print_final_log(self):
+        if self.failed:
+            self.log(LogLevel.ERROR, f"failed: {self.failed}\n", timestamped=False)
+        for entry in self.saved_logs:
+            self.log(entry.level, entry.message, timestamped=False)
 
-def error(s: str, save: bool = False):
-    global failed
-    console.print(Text(s, style='red'))
-    if save:
-        saved_logs.append(Log(s, error))
-        failed += 1
+    def info(self, msg: str, timestamped: bool = True, save: bool = False):
+        self.log(LogLevel.INFO, msg, timestamped, save)
 
-def print_final_log():
-    if failed:
-        error(f"failed: {failed}\n")
-    for log in saved_logs:
-        log.level_call(log.s)
+    def success(self, msg: str, timestamped: bool = True, save: bool = False):
+        self.log(LogLevel.SUCCESS, msg, timestamped, save)
+
+    def warning(self, msg: str, timestamped: bool = True, save: bool = False):
+        self.log(LogLevel.WARNING, msg, timestamped, save)
+
+    def error(self, msg: str, timestamped: bool = True, save: bool = False):
+        self.log(LogLevel.ERROR, msg, timestamped, save)
