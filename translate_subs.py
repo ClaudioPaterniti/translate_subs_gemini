@@ -8,7 +8,8 @@ from string import Template
 
 from src.models import *
 from src.gemini import GeminiClient
-from src.rate_limited_queue import RateLimitedQueue
+from src.rate_limiter import RateLimitedLLM
+from src.translate_file import FileTranslationTask
 from src.logger import Logger
 
 def translated_path(file_path: str, suffix: str) -> str:
@@ -18,17 +19,25 @@ def translated_path(file_path: str, suffix: str) -> str:
     full_path = os.path.join(path, out_file_name)
     return full_path
 
-async def main(queue: RateLimitedQueue, file_paths: list[str], config: Config, logger: Logger):
-    files = []
-    for file_path in file_paths:
-        try:
-            out_path = translated_path(file_path, config.outfile_suffix)
-            files.append(SubsTranslation.from_file(
-                file_path, out_path, config.dialogue_chunks_size, logger))
-        except Exception as ex:
-            logger.error(f"{file_path} failed: {ex}", save=True)
+async def worker(semaphore: asyncio.Semaphore, task: FileTranslationTask):
+    async with semaphore:
+        await task()
 
-    await queue.translate_all(files)
+async def main(llm: RateLimitedLLM, file_paths: list[str], config: Config, logger: Logger):
+    semaphore = asyncio.Semaphore(config.max_concurrent_requests or config.requests_per_minutes)
+
+    async with asyncio.TaskGroup() as tg:
+        for file_path in file_paths:
+            try:
+                out_path = translated_path(file_path, config.outfile_suffix)
+                translation_task = FileTranslationTask(
+                    file_path, out_path, llm,
+                    config.dialogue_chunks_size, config.json_max_chars,
+                    config.json_reduced_chars, logger
+                )
+                tg.create_task(worker(semaphore, translation_task))
+            except Exception as ex:
+                logger.error(f"{file_path} failed: {ex}", save=True)
 
     print('\n')
     logger.info(f'Terminated - final log:')
@@ -86,10 +95,8 @@ if __name__ == '__main__':
     )
 
     max_retries = config.max_retries
-    queue = RateLimitedQueue(
+    queue = RateLimitedLLM(
         client=client,
-        max_context=config.max_context_window,
-        reduced_context=config.reduced_context_window,
         requests_per_minute=config.requests_per_minutes,
         tokens_per_minute=config.token_per_minutes,
         max_retries=max_retries,

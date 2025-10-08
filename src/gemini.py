@@ -1,11 +1,15 @@
 from pydantic import BaseModel
+from typing import TypeVar
 
 from google import genai
 from google.genai.errors import ClientError, ServerError
 from google.genai.types import GenerateContentResponse
 
-from src.models import RetriableException
+from src.models import RetriableException, InvalidJsonException
 from src.logger import Logger
+
+
+Structure = TypeVar('Structure', bound=BaseModel)
 
 class GeminiClient:
 
@@ -19,13 +23,12 @@ class GeminiClient:
         self.client = genai.Client(api_key=key)
 
 
-    async def ask_question(self,
-            question: str, structure: BaseModel = None) -> GenerateContentResponse:
+    async def structured_output(self, question: str, structure: Structure) -> Structure:
 
         config= self.config | {
             "response_mime_type": "application/json",
             "response_schema": structure
-        } if structure is not None else self.config
+        }
 
         try:
             full_question = self.prompt + '\n' + question
@@ -39,7 +42,10 @@ class GeminiClient:
             else:
                 raise ex
 
-        return response
+        if response.parsed is None:
+            raise InvalidJsonException("Gemini response could not be parsed")
+
+        return response.parsed
 
     async def compute_question_tokens(self, question: str) -> int:
         question = self.prompt + '\n' + question
