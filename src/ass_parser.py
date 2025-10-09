@@ -28,10 +28,12 @@ class AssTranslationFile(TranslationFile):
 
         sections = self._apply_ignores(subs[1:])
 
-        self._fields: list[str] = [f"{l[0]}:" + ','.join(l[1:len(self._format)]) for l in sections]
+        self._fields: list[str] = [
+            f"{line[0]}:" + ','.join(line[1:len(self._format)]) for line in sections]
+
         self._dialogue: list[str] = [
-            self.command_regex.sub(self._sub_commands, l[len(self._format)])
-            for l in sections]
+            self.command_regex.sub(self._sub_commands, line[-1])
+            for line in sections]
 
 
     def _apply_ignores(self, lines: list[str]) -> list[list[str]]:
@@ -40,7 +42,8 @@ class AssTranslationFile(TranslationFile):
             ignored = False
             event, value = l.split(':', 1)
             fields = value.split(',', len(self._format)-1)
-            if event.strip().lower() == 'comment': ignored = True
+            text = fields[-1].strip()
+            if event.strip().lower() == 'comment' or not text: ignored = True
             else:
                 for rule in self._ignore:
                     if fields[rule._field_i].strip() in rule.values: ignored = True
