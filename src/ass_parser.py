@@ -20,10 +20,11 @@ class AssTranslationFile(TranslationFile):
             rule._field_i = self._format.get(rule.field.lower()) # maps field name to field position
         self._ignore = [r for r in settings.ignore if r._field_i is not None]
 
-        self._fields: list[str]
-        self._commands: dict[str, str] = {}
-        self._ignored: list[str] = []
-        self._ignored_i: list[int] = []
+        # .ass format commands '{...}' are replaced with dummy tokens '{format 1}' to simplify dialogue for translation
+        self._commands: dict[str, str] = {} # maps dummy tokens to original commands for final restore
+
+        self._ignored: list[str] = [] # ignored lines
+        self._ignored_i: list[int] = [] # ignored line numbers
 
         sections = self._apply_ignores(subs[1:])
 
