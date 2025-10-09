@@ -10,14 +10,14 @@ class AssTranslationFile(TranslationFile):
     def __init__(self, text: str, settings: AssSettings):
         splitted = text.strip().split('[Events]', 1)
         subs = [s for s in splitted[1].split('\n') if s.strip()]
-        self._header = splitted[0] + '[Events]\n' + subs[0]
+        self._header = splitted[0] + '[Events]\n' + subs[0] # from start to 'Format:...' line included
         self._format = {
             s.strip().lower(): i
             for i, s in enumerate(subs[0].replace('Format:', '').split(','))
         }
 
         for rule in settings.ignore:
-            rule._field_i = self._format.get(rule.field.lower())
+            rule._field_i = self._format.get(rule.field.lower()) # maps field name to field position
         self._ignore = [r for r in settings.ignore if r._field_i is not None]
 
         self._fields: list[str]

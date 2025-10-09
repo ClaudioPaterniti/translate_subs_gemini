@@ -38,13 +38,15 @@ class InvalidJsonException(Exception):
 
 class TranslationFile(Protocol):
     def get_dialogue(self) -> list[str]:
+        """Return a simple dialogue as a list of lines"""
         ...
 
     def map_dialogue_lines(self, lines: list[int]) -> list[int]:
-        """Returns the corresponding line number in the final file"""
+        """Map simple dialogue line numbers to the corresponding lines in the final file"""
         ...
 
     def get_translation(self, translation: list[str]) -> str:
+        """Recompose the final file structure with the translated dialogue"""
         ...
 
 class DialogueChunk(BaseModel):
