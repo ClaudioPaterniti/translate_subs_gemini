@@ -95,12 +95,11 @@ if __name__ == '__main__':
         logger=rich_logger
     )
 
-    max_retries = config.max_retries
     queue = RateLimitedLLM(
         client=client,
         requests_per_minute=config.requests_per_minutes,
         tokens_per_minute=config.token_per_minutes,
-        max_retries=max_retries,
+        max_retries=config.max_retries,
         max_concurrent_requests=config.max_concurrent_requests,
         logger=rich_logger
     )

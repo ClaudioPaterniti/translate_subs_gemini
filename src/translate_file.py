@@ -7,6 +7,10 @@ from itertools import chain
 
 from src.models import *
 from src.rate_limiter import RateLimitedLLM
+from src.srt_parser import SrtTranslationFile
+from src.ass_parser import AssTranslationFile
+from src.chunker import ChunkedTranslation, split_chunks, flatten_chunks
+from src.logger import Logger
 
 class FileTranslationTask:
 
@@ -36,8 +40,8 @@ class FileTranslationTask:
         try:
             sub_file = self._load_file()
             dialogue = sub_file.get_dialogue()
-            translation = SubsTranslation(dialogue, self.chunk_size, self.logger)
-            chunks = self._split(translation.chunks, self.max_chars)
+            translation = ChunkedTranslation(dialogue, self.chunk_size, self.logger)
+            chunks = split_chunks(translation.chunks, self.max_chars)
 
             chunk_id = f"{self._filename} - part {{}}" if len(chunks) > 1 else self._filename
             try:
@@ -49,19 +53,8 @@ class FileTranslationTask:
             except* Exception as exs:
                 raise exs.exceptions[0]
 
-            translation.add_translation(self._flatten_chunks([t.result() for t in tasks]))
-            await self._handle_misalignments(translation)
-
-            misalignments = [self.chunk_size*i for i in translation.misaligned_chunks]
-            misalignments_warnings = [
-                f"{l}-{l + self.chunk_size}"
-                for l in sub_file.map_dialogue_lines(misalignments)]
-
-            if misalignments:
-                self.logger.warning(
-                    f"{self._filename} - misilignments at lines [{', '.join(misalignments_warnings)}]",
-                    save=True)
-
+            translation.add_translation(flatten_chunks([t.result() for t in tasks]))
+            await self._handle_misalignments(translation, sub_file)
 
             translated = sub_file.get_translation(translation.get_translated_dialogue())
             with open(self.out_path, 'w+', encoding='utf-8') as fp:
@@ -80,24 +73,7 @@ class FileTranslationTask:
             else:
                 return SrtTranslationFile(fp.read())
 
-    @staticmethod
-    def _split(chunks: DialogueChunks, max_chars: int) -> list[DialogueChunks]:
-        text = chunks.model_dump_json(indent=2)
-        chars = len(text)
-        if chars > max_chars:
-            split = int(ceil(chars/max_chars))
-            chunks_n = int(ceil(len(chunks.chunks)/split))
-            return [
-                DialogueChunks(chunks=chunks.chunks[i: i + chunks_n])
-                for i in range(0, len(chunks.chunks), chunks_n)]
-        return [chunks]
-
-    @staticmethod
-    def _flatten_chunks(chunks: list[DialogueChunks]) -> DialogueChunks:
-        chunks = list(chain.from_iterable([c.chunks for c in chunks]))
-        return DialogueChunks(chunks= chunks)
-
-    async def _handle_misalignments(self, subs: SubsTranslation):
+    async def _handle_misalignments(self, subs: ChunkedTranslation, sub_file: TranslationFile):
         misaligned = subs.get_misaligned_chunks()
         if misaligned.chunks:
             text = misaligned.model_dump_json(indent=2)
@@ -111,6 +87,16 @@ class FileTranslationTask:
                 f"{self._filename} corrections", text, DialogueChunks)
             subs.apply_corrections(result)
 
+        misalignments = [self.chunk_size*i for i in subs.misaligned_chunks]
+        misalignments_warnings = [
+            f"{l}-{l + self.chunk_size}"
+            for l in sub_file.map_dialogue_lines(misalignments)]
+
+        if misalignments:
+            self.logger.warning(
+                f"{self._filename} - misilignments at lines [{', '.join(misalignments_warnings)}]",
+                save=True)
+
     async def _translate_chunk(
             self, chunk_id: str, chunks: DialogueChunks) -> DialogueChunks:
         text = chunks.model_dump_json(indent=2)
@@ -119,7 +105,7 @@ class FileTranslationTask:
         except InvalidJsonException:
             if len(text) > self.reduced_chars:
                 self.logger.warning(f"{chunk_id}: Gemini returned an invalid json, retrying with reduced context window")
-                splitted = self._split(chunks, self.reduced_chars)
+                splitted = split_chunks(chunks, self.reduced_chars)
                 async with asyncio.TaskGroup() as tg:
                     tasks = [
                         tg.create_task(self.llm.structured_output(
@@ -127,6 +113,6 @@ class FileTranslationTask:
                             chunk.model_dump_json(indent=2),
                             DialogueChunks))
                         for i, chunk in enumerate(splitted)]
-                return self._flatten_chunks([t.result() for t in tasks])
+                return flatten_chunks([t.result() for t in tasks])
             else:
                 raise

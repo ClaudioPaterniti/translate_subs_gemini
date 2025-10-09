@@ -76,7 +76,7 @@ class RateLimitedLLM:
         return True
 
     async def structured_output(
-            self, request_id: str, text: str, structure: Structure, retry: int = 0) -> Structure:
+            self, request_id: str, text: str, structure: Structure, _retry: int = 0) -> Structure:
         tokens = int(self.client.estimate_question_tokens(text) * 2.1)
 
         queued = False
@@ -92,10 +92,10 @@ class RateLimitedLLM:
             return await self.client.structured_output(text, structure)
 
         except RetriableException as ex:
-            if retry < self.max_retries:
+            if _retry < self.max_retries:
                 self.logger.warning(f"{request_id}: rescheduling after - {ex}")
                 if not complete: complete = self._complete(tokens)
-                return await self.structured_output(request_id, text, structure, retry + 1)
+                return await self.structured_output(request_id, text, structure, _retry + 1)
             else:
                 raise
 
