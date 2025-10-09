@@ -30,7 +30,7 @@ class Logger:
         self.console = Console()
         self.saved_logs: List[Log] = []
         self.failed = 0
-        self.debug = debug
+        self._debug = debug
 
     def log(self, level: LogLevel, message: str, timestamped: bool = True, save: bool = False):
         timestamp = datetime.now().strftime("[%H:%M:%S] - ") if timestamped else ''
@@ -48,7 +48,7 @@ class Logger:
             self.log(entry.level, entry.message, timestamped=False)
 
     def debug(self, msg: str, timestamped: bool = True, save: bool = False):
-        if self.debug:
+        if self._debug:
             self.log(LogLevel.DEBUG, msg, timestamped, save)
 
     def info(self, msg: str, timestamped: bool = True, save: bool = False):

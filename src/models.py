@@ -121,9 +121,9 @@ class AssTranslationFile(TranslationFile):
     command_regex: ClassVar[re.Pattern] = re.compile(r'\{[^{}]+\}')
 
     def __init__(self, text: str, settings: AssSettings):
-        splitted = text.strip().split('[Events]\n', 1)
+        splitted = text.strip().split('[Events]', 1)
         subs = [s for s in splitted[1].split('\n') if s.strip()]
-        self._header = '\n'.join([splitted[0], subs[0]])
+        self._header = splitted[0] + '[Events]\n' + subs[0]
         self._format = {
             s.strip().lower(): i
             for i, s in enumerate(subs[0].replace('Format:', '').split(','))
@@ -140,7 +140,7 @@ class AssTranslationFile(TranslationFile):
 
         sections = self._apply_ignores(subs[1:])
 
-        self._fields: list[str] = [f"{l[0]}:" + ','.join(l[1:len(self._format)-1]) for l in sections]
+        self._fields: list[str] = [f"{l[0]}:" + ','.join(l[1:len(self._format)]) for l in sections]
         self._dialogue: list[str] = [
             self.command_regex.sub(self._sub_commands, l[len(self._format)])
             for l in sections]
@@ -202,7 +202,7 @@ class AssTranslationFile(TranslationFile):
             else:
                 final.append(lines[h])
                 h += 1
-        return self._header + '\n' + '\n'.join(final)
+        return  '\n'.join([self._header] + final)
 
 class SrtTranslationFile(TranslationFile):
 
