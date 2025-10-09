@@ -10,6 +10,11 @@
     "content_config": {
         "temperature": 0.0
     },
-    "max_retries": 50,
-    "outfile_suffix": "_ita"
+    "max_retries": 2,
+    "outfile_suffix": "_ita",
+    "ass_settings":{
+        "ignore": [
+            {"field": "Effect", "values": ["fx"]}
+        ]
+    }
 }

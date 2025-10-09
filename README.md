@@ -15,7 +15,7 @@ The setup_env.ps1 script can be used to setup the python .venv with the required
 ```
 
 Setup an appropriate prompt.txt to guide the translation.
-Gemini settings can be configured in gemini_config.json
+Gemini and other settings can be configured in config.json
 
 ## How to
 

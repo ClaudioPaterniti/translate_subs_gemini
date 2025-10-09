@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import glob
+import traceback
 
 from collections.abc import Awaitable
 from string import Template
@@ -33,11 +34,12 @@ async def main(llm: RateLimitedLLM, file_paths: list[str], config: Config, logge
                 translation_task = FileTranslationTask(
                     file_path, out_path, llm,
                     config.dialogue_chunks_size, config.json_max_chars,
-                    config.json_reduced_chars, logger
+                    config.json_reduced_chars, config.ass_settings, logger
                 )
                 tg.create_task(worker(semaphore, translation_task))
             except Exception as ex:
                 logger.error(f"{file_path} failed: {ex}", save=True)
+                logger.debug(traceback.format_exc())
 
     print('\n')
     logger.info(f'Terminated - final log:')
@@ -45,7 +47,6 @@ async def main(llm: RateLimitedLLM, file_paths: list[str], config: Config, logge
 
 
 if __name__ == '__main__':
-
     rich_logger = Logger()
     script_path = os.path.abspath(os.path.split(__file__)[0])
     key = os.environ.get('GEMINI_KEY')
@@ -58,7 +59,7 @@ if __name__ == '__main__':
         sys.exit()
 
     with (
-            open(os.path.join(script_path, 'gemini_config.json'), 'r') as config_fp,
+            open(os.path.join(script_path, 'config.json'), 'r') as config_fp,
             open(os.path.join(script_path, 'user_prompt.txt'), 'r') as user_prompt_fp,
             open(os.path.join(script_path, 'system_prompt.txt'), 'r') as system_prompt_fp,
         ):

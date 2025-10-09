@@ -1,5 +1,6 @@
 import os
 import asyncio
+import traceback
 
 from math import ceil
 from itertools import chain
@@ -17,6 +18,7 @@ class FileTranslationTask:
             chunk_size: int,
             max_chars: int,
             reduced_chars: int,
+            ass_settings: AssSettings,
             logger: Logger):
         self.path = path
         self.out_path = out_path
@@ -24,6 +26,7 @@ class FileTranslationTask:
         self.chunk_size = chunk_size
         self.max_chars = max_chars
         self.reduced_chars = reduced_chars
+        self.ass_settings = ass_settings
         self.logger = logger
 
 
@@ -44,7 +47,7 @@ class FileTranslationTask:
                         for i, chunk in enumerate(chunks)
                     ]
             except* Exception as exs:
-                self.logger.error(f"{self._filename}: {exs.exceptions[0]}",  save=True)
+                raise exs.exceptions[0]
 
             translation.add_translation(self._flatten_chunks([t.result() for t in tasks]))
             await self._handle_misalignments(translation)
@@ -68,11 +71,12 @@ class FileTranslationTask:
 
         except Exception as ex:
             self.logger.error(f"{self._filename}: {ex}", save=True)
+            self.logger.debug(traceback.format_exc())
 
     def _load_file(self) -> TranslationFile:
         with open(self.path, 'r', encoding='utf-8') as fp:
             if self.path.endswith('.ass'):
-                return AssTranslationFile(fp.read())
+                return AssTranslationFile(fp.read(), self.ass_settings)
             else:
                 return SrtTranslationFile(fp.read())
 
