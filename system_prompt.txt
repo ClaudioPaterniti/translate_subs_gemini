@@ -1,4 +1,4 @@
-The following json contains dialogues from subtitles in .ass or .srt format divided in chunks of $dialogue_chunks_size lines each, with the following schema:
+The following json contains dialogues from subtitles in .ass or .srt format divided in chunks of $lines_per_chunk lines each, with the following schema:
 {
     "chunks": [
         {

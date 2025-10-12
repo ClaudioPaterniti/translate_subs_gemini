@@ -17,15 +17,16 @@ class Config(BaseModel):
     translate_to: str
     outfile_suffix: str
     model: str = "gemini-2.0-flash"
-    dialogue_chunks_size: int = 10
-    json_max_chars: int = 300000
-    json_reduced_chars: int = 8000
+    lines_per_chunk: int = 30
+    chunks_per_request: int = 10
+    reduced_chunks_per_request: int = 5
     requests_per_minutes: int = 15
     token_per_minutes: int = 1000000
     max_concurrent_requests: Optional[int] = None
     content_config: dict[str, Any] = {}
     max_retries: int = 50
     ass_settings: AssSettings
+    debug: bool = False
 
 class MisalignmentException(Exception):
     pass

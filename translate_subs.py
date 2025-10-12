@@ -33,8 +33,8 @@ async def main(llm: RateLimitedLLM, file_paths: list[str], config: Config, logge
                 out_path = translated_path(file_path, config.outfile_suffix)
                 translation_task = FileTranslationTask(
                     file_path, out_path, llm,
-                    config.dialogue_chunks_size, config.json_max_chars,
-                    config.json_reduced_chars, config.ass_settings, logger
+                    config.lines_per_chunk, config.chunks_per_request,
+                    config.reduced_chunks_per_request, config.ass_settings, logger
                 )
                 tg.create_task(worker(semaphore, translation_task))
             except Exception as ex:
@@ -67,6 +67,7 @@ if __name__ == '__main__':
         user_prompt = user_prompt_fp.read()
         system_prompt = Template(system_prompt_fp.read()).substitute(dict(config))
 
+    rich_logger._debug = config.debug
     prompt = user_prompt + '\n' + system_prompt
 
     if len(sys.argv) == 2 and os.path.isdir(sys.argv[1]):

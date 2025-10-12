@@ -73,6 +73,7 @@ class RateLimitedLLM:
         self._running -= 1
         self._completed_log.append(
             LogEntry(datetime.now(tz=timezone.utc), tokens_n))
+        self.logger.debug(f"Completed {tokens_n} tokens")
         return True
 
     async def structured_output(

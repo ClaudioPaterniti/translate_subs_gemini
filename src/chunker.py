@@ -5,16 +5,12 @@ from src.models import DialogueChunk, DialogueChunks, MisalignmentException
 from src.logger import Logger
 
 
-def split_chunks(chunks: DialogueChunks, max_chars: int) -> list[DialogueChunks]:
-    text = chunks.model_dump_json(indent=2)
-    chars = len(text)
-    if chars > max_chars:
-        split = int(ceil(chars/max_chars))
-        chunks_n = int(ceil(len(chunks.chunks)/split))
-        return [
-            DialogueChunks(chunks=chunks.chunks[i: i + chunks_n])
-            for i in range(0, len(chunks.chunks), chunks_n)]
-    return [chunks]
+def split_chunks(chunks: DialogueChunks, chunks_per_block: int) -> list[DialogueChunks]:
+    blocks = ceil(len(chunks.chunks)/chunks_per_block)
+    q, r = divmod(len(chunks.chunks), blocks)
+    return [
+        DialogueChunks(chunks=chunks.chunks[i*q + min(i, r):(i+1)*q + min(i+1, r)])
+        for i in range(blocks)]
 
 def flatten_chunks(chunks: list[DialogueChunks]) -> DialogueChunks:
     chunks = list(chain.from_iterable([c.chunks for c in chunks]))

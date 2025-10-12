@@ -9,7 +9,9 @@ class AssTranslationFile(TranslationFile):
 
     def __init__(self, text: str, settings: AssSettings):
         splitted = text.strip().split('[Events]', 1)
+        if len(splitted) == 1: raise ValueError("Invalid .ass format, [Events] tag not found")
         subs = [s for s in splitted[1].split('\n') if s.strip()]
+        if not subs[0].strip().lower().startswith('format'): raise ValueError("Invalid .ass format, 'Format:' line not found")
         self._header = splitted[0] + '[Events]\n' + subs[0] # from start to 'Format:...' line included
         self._format = {
             s.strip().lower(): i
@@ -39,14 +41,17 @@ class AssTranslationFile(TranslationFile):
     def _apply_ignores(self, lines: list[str]) -> list[list[str]]:
         subs = []
         for i, l in enumerate(lines):
-            ignored = False
-            event, value = l.split(':', 1)
-            fields = value.split(',', len(self._format)-1)
-            text = fields[-1].strip()
-            if event.strip().lower() == 'comment' or not text: ignored = True
-            else:
-                for rule in self._ignore:
-                    if fields[rule._field_i].strip() in rule.values: ignored = True
+            ignored = True
+            splitted = l.split(':', 1)
+            if len(splitted) == 2 and splitted[0].strip().lower() == 'dialogue':
+                event, value = splitted
+                fields = value.split(',', len(self._format)-1)
+                if len(fields) == len(self._format) and fields[-1].strip():
+                    ignored = False
+                    for rule in self._ignore:
+                        if fields[rule._field_i].strip() in rule.values:
+                            ignored = True
+                            break
 
             if ignored:
                 self._ignored_i.append(i)

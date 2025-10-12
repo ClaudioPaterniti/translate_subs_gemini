@@ -1,12 +1,12 @@
 {
-    "model": "gemini-2.5-flash-lite",
+    "model": "gemini-2.0-flash",
     "original_language": "english",
     "translate_to": "italian",
     "requests_per_minutes": 15,
-    "dialogue_chunks_size": 10,
+    "lines_per_chunk": 30,
+    "chunks_per_request": 10,
+    "reduced_chunks_per_request": 5,
     "token_per_minutes": 1000000,
-    "json_max_chars": 8000,
-    "json_reduced_chars": 4000,
     "content_config": {
         "temperature": 0.0
     },
@@ -16,5 +16,6 @@
         "ignore": [
             {"field": "Effect", "values": ["fx"]}
         ]
-    }
+    },
+    "debug": false
 }
