@@ -18,6 +18,8 @@ class AssTranslationFile(TranslationFile):
             for i, s in enumerate(subs[0].replace('Format:', '').split(','))
         }
 
+        self._name_i = self._format.get('name')
+
         for rule in settings.ignore:
             rule._field_i = self._format.get(rule.field.lower()) # maps field name to field position
         self._ignore = [r for r in settings.ignore if r._field_i is not None]
@@ -33,8 +35,14 @@ class AssTranslationFile(TranslationFile):
         self._fields: list[str] = [
             f"{line[0]}:" + ','.join(line[1:len(self._format)]) for line in sections]
 
+        compose_line = (
+            lambda line: f"{line[self._name_i + 1] or 'Unknown'}: {line[-1]}"
+            if self._name_i is not None
+            else lambda line: line[-1]
+        )
+
         self._dialogue: list[str] = [
-            self.command_regex.sub(self._sub_commands, line[-1])
+            self.command_regex.sub(self._sub_commands, compose_line(line))
             for line in sections]
 
 
@@ -86,6 +94,8 @@ class AssTranslationFile(TranslationFile):
 
     def get_translation(self, translation: list[str]):
         if len(self._fields) != len(translation): raise Exception("Lines count mismatch")
+        if self._name_i is not None:
+            translation = [line.split(': ', 1)[-1] for line in translation]
         lines = [
             f"{f},{self.command_regex.sub(self._restore_commands, l)}"
             for f, l in zip(self._fields, translation)]
