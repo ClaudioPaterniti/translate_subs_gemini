@@ -1,4 +1,5 @@
-from typing import Optional, Any, Protocol
+from typing import Optional, Any, Protocol, Callable, Awaitable
+from dataclasses import dataclass
 
 from pydantic import BaseModel
 
@@ -15,6 +16,7 @@ class Config(BaseModel):
     translate_to: str
     outfile_suffix: str
     model: str = "gemini-2.0-flash"
+    translator_type: str = "json"
     lines_per_chunk: int = 30
     chunks_per_request: int = 10
     reduced_chunks_per_request: int = 5
@@ -25,6 +27,12 @@ class Config(BaseModel):
     max_retries: int = 50
     ass_settings: AssSettings
     debug: bool = False
+
+@dataclass
+class TranslationOutput:
+    name: str
+    dialogue: list[str]
+    misalignments: list[tuple[int, int]]
 
 class MisalignmentException(Exception):
     pass
@@ -44,9 +52,12 @@ class TranslationFile(Protocol):
         """Map simple dialogue line numbers to the corresponding lines in the final file"""
         ...
 
-    def get_translation(self, translation: list[str]) -> str:
+    def get_translation(self, translation: TranslationOutput) -> str:
         """Recompose the final file structure with the translated dialogue"""
         ...
+
+class Translator(Protocol):
+    async def __call__(self, filename: str, dialogue: list[str]) -> TranslationOutput: ...
 
 class DialogueChunk(BaseModel):
     from_line: int

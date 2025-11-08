@@ -2,7 +2,6 @@ from math import ceil
 from itertools import chain
 
 from src.models import DialogueChunk, DialogueChunks, MisalignmentException
-import src.logger as logger
 
 
 def split_chunks(chunks: DialogueChunks, chunks_per_block: int) -> list[DialogueChunks]:

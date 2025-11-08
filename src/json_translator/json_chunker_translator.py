@@ -1,68 +1,46 @@
-import os
 import asyncio
 import traceback
-
-from math import ceil
-from itertools import chain
+from string import Template
 
 from src.models import *
 from src.rate_limiter import RateLimitedLLM
-from src.srt_parser import SrtTranslationFile
-from src.ass_parser import AssTranslationFile
-from src.chunker import ChunkedTranslation, split_chunks, flatten_chunks
+from src.json_translator.json_chunker import ChunkedTranslation, split_chunks, flatten_chunks
 import src.logger as logger
 
-class FileTranslationTask:
+from importlib import resources
+
+prompt = Template(resources.files(__package__).joinpath("prompt.md").read_text())
+
+class JsonChunkerTranslator:
 
     def __init__(
             self,
-            path: str,
-            out_path: str,
             llm: RateLimitedLLM,
             chunk_lines: int,
             request_chunks: int,
-            reduced_request_chunks: int,
-            ass_settings: AssSettings):
-        self.path = path
-        self.out_path = out_path
+            reduced_request_chunks: int):
         self.llm = llm
         self.chunk_lines = chunk_lines
         self.request_chunks = request_chunks
         self.reduced_request_chunks = reduced_request_chunks
-        self.ass_settings = ass_settings
 
-
-        _, self._filename = os.path.split(self.path)
-
-    async def __call__(self):
+    async def __call__(self, filename: str, dialogue: list[str]) -> TranslationOutput:
         try:
-            sub_file = self._load_file()
-            dialogue = sub_file.get_dialogue()
             translation = ChunkedTranslation(dialogue, self.chunk_lines)
 
             result = await self._split_and_translate(
-                self._filename, translation.chunks, self.request_chunks)
+                filename, translation.chunks, self.request_chunks)
 
             translation.add_translation(result)
-            await self._handle_misalignments(translation, sub_file)
+            misalignments = await self._handle_misalignments(filename, translation)
 
-            translated = sub_file.get_translation(translation.get_translated_dialogue())
+            translated =  translation.get_translated_dialogue()
 
-            with open(self.out_path, 'w+', encoding='utf-8') as fp:
-                fp.write(translated)
-
-            logger.success(f"{self._filename}: Generated {self.out_path}", save=True)
+            return TranslationOutput(filename, translated, misalignments)
 
         except Exception as ex:
-            logger.error(f"{self._filename}: {ex}", save=True)
+            logger.error(f"{filename}: {ex}", save=True)
             logger.debug(traceback.format_exc())
-
-    def _load_file(self) -> TranslationFile:
-        with open(self.path, 'r', encoding='utf-8') as fp:
-            if self.path.endswith('.ass'):
-                return AssTranslationFile(fp.read(), self.ass_settings)
-            else:
-                return SrtTranslationFile(fp.read())
 
     async def _split_and_translate(
             self, chunk_id: str, chunks: DialogueChunks, request_chunks: int) -> DialogueChunks:
@@ -83,7 +61,8 @@ class FileTranslationTask:
     async def _translate_block(
             self, chunk_id: str, chunks: DialogueChunks) -> DialogueChunks:
         try:
-            text = chunks.model_dump_json(indent=2)
+            json_str = chunks.model_dump_json(indent=2)
+            text = prompt.substitute(lines_per_chunk= self.chunk_lines, json= json_str)
             resp: DialogueChunks = await self.llm.structured_output(chunk_id, text, DialogueChunks)
             if len(resp.chunks) != len(chunks.chunks): raise InvalidJsonException("Number of translated chunks does not match")
             return resp
@@ -94,26 +73,21 @@ class FileTranslationTask:
             else:
                 raise
 
-    async def _handle_misalignments(self, subs: ChunkedTranslation, sub_file: TranslationFile):
+    async def _handle_misalignments(
+            self, filename: str, subs: ChunkedTranslation) -> list[tuple[int, int]]:
         misaligned = subs.get_misaligned_chunks()
         if misaligned.chunks:
             if len(misaligned.chunks) > self.request_chunks:
-                raise MisalignmentException(f"{self._filename}: result translation did no match original structure")
+                raise MisalignmentException(f"{filename}: result translation did no match original structure")
 
             logger.warning(
-                f"{self._filename}: result translation has some line misalignment, trying correction")
+                f"{filename}: result translation has some line misalignment, trying correction")
 
-            text = misaligned.model_dump_json(indent=2)
+            json_str = misaligned.model_dump_json(indent=2)
+            text = prompt.substitute(lines_per_chunk= self.chunk_lines, json= json_str)
             result = await self.llm.structured_output(
-                f"{self._filename} corrections", text, DialogueChunks)
+                f"{filename} corrections", text, DialogueChunks)
             subs.apply_corrections(result)
 
         misalignments = [self.chunk_lines*i for i in subs.misaligned_chunks]
-        misalignments_warnings = [
-            f"{l}-{l + self.chunk_lines}"
-            for l in sub_file.map_dialogue_lines(misalignments)]
-
-        if misalignments:
-            logger.warning(
-                f"{self._filename} - misilignments at lines [{', '.join(misalignments_warnings)}]",
-                save=True)
+        return [(l, l + self.chunk_lines) for l in misalignments]

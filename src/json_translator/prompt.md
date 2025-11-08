@@ -23,9 +23,6 @@ The following json contains dialogues from subtitles in .ass or .srt format divi
     ]
 }
 
-You have to translate the dialogues line by line from $original_language to $translate_to keeping the exact same structure, without splitting, deleting or creating any line.
-The output json should have the exact same number of chunks, and each chunk should have the same number of lines of the original one.
+Translate the following dialogues line by line.
 
-Since dialogues comes from .srt or .ass subtitlies, do not translate the content of braces like {format i}, or html tags like <tag>.
-
-Translate the following json from $original_language to $translate_to:
+$json
