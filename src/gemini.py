@@ -21,6 +21,24 @@ class GeminiClient:
 
         self.client = genai.Client(api_key=key)
 
+    async def ask(self, question: str) -> str:
+
+        config= self.config
+
+        try:
+            full_question = self.prompt + '\n' + question
+            response = await self.client.aio.models.generate_content(
+                model=self.model, contents=full_question,
+                config=config
+            )
+        except (ClientError, ServerError) as ex:
+            if ex.status in {'RESOURCE_EXHAUSTED', 'UNAVAILABLE'}:
+                raise RetriableException(ex.message)
+            else:
+                raise ex
+
+        return response.text
+
 
     async def structured_output(self, question: str, structure: Structure) -> Structure:
 

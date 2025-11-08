@@ -31,13 +31,14 @@ failed = 0
 debug_enabled = False
 
 def log(level: LogLevel, message: str, timestamped: bool = True, save: bool = False):
+    global failed
     timestamp = datetime.now().strftime("[%H:%M:%S] - ") if timestamped else ''
     style = LEVEL_STYLES.get(level, "grey50")
     console.print(Text(timestamp, style="grey50") + Text(message, style=style))
     if save:
         saved_logs.append(Log(message, level))
         if level == LogLevel.ERROR:
-            failed += 1
+           failed += 1
 
 def print_final_log():
     if failed:

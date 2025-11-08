@@ -74,6 +74,33 @@ class RateLimitedLLM:
         logger.debug(f"Completed {tokens_n} tokens")
         return True
 
+    async def ask(
+            self, request_id: str, text: str, _retry: int = 0) -> str:
+        tokens = int(self.client.estimate_question_tokens(text) * 2.1)
+
+        queued = False
+        complete = False
+        while not self._try_start(tokens):
+            if not queued:
+                queued = True
+                logger.info(f"{request_id}: in queue")
+            await asyncio.sleep(2)
+
+        try:
+            logger.info(f"{request_id}: calling Gemini")
+            return await self.client.ask(text)
+
+        except RetriableException as ex:
+            if _retry < self.max_retries:
+                logger.warning(f"{request_id}: rescheduling after - {ex}")
+                if not complete: complete = self._complete(tokens)
+                return await self.ask(request_id, text, _retry + 1)
+            else:
+                raise
+
+        finally:
+            if not complete: self._complete(tokens)
+
     async def structured_output(
             self, request_id: str, text: str, structure: Structure, _retry: int = 0) -> Structure:
         tokens = int(self.client.estimate_question_tokens(text) * 2.1)

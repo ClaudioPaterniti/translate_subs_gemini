@@ -4,7 +4,7 @@ from string import Template
 
 from src.models import *
 from src.rate_limiter import RateLimitedLLM
-from src.json_translator.json_chunker import ChunkedTranslation, split_chunks, flatten_chunks
+from src.json_translator.chunker import ChunkedTranslation, split_chunks, flatten_chunks
 import src.logger as logger
 
 from importlib import resources
@@ -17,12 +17,11 @@ class JsonChunkerTranslator:
             self,
             llm: RateLimitedLLM,
             chunk_lines: int,
-            request_chunks: int,
-            reduced_request_chunks: int):
+            request_chunks: int):
         self.llm = llm
         self.chunk_lines = chunk_lines
         self.request_chunks = request_chunks
-        self.reduced_request_chunks = reduced_request_chunks
+        self._reduced_request_chunks = request_chunks/2
 
     async def __call__(self, filename: str, dialogue: list[str]) -> TranslationOutput:
         try:
@@ -67,9 +66,9 @@ class JsonChunkerTranslator:
             if len(resp.chunks) != len(chunks.chunks): raise InvalidJsonException("Number of translated chunks does not match")
             return resp
         except InvalidJsonException:
-            if len(chunks.chunks) > self.reduced_request_chunks:
+            if len(chunks.chunks) > self._reduced_request_chunks:
                 logger.warning(f"{chunk_id}: Gemini returned an invalid json, retrying with reduced context window")
-                return await self._split_and_translate(chunk_id, chunks, self.reduced_request_chunks)
+                return await self._split_and_translate(chunk_id, chunks, self._reduced_request_chunks)
             else:
                 raise
 

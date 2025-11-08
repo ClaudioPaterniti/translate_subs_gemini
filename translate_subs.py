@@ -11,7 +11,6 @@ from string import Template
 from src.models import *
 from src.gemini import GeminiClient
 from src.rate_limiter import RateLimitedLLM
-from src.json_translator.json_chunker_translator import JsonChunkerTranslator
 from src.srt_parser import SrtTranslationFile
 from src.ass_parser import AssTranslationFile
 
@@ -46,17 +45,18 @@ async def worker(
 
         translated = sub_file.get_translation(translation.dialogue)
 
-        misalignments = sub_file.map_dialogue_lines(
-             [x for a, b in translation.misalignments for x in (a, b)])
+        if translation.misalignments:
+            misalignments = sub_file.map_dialogue_lines(
+                [x for a, b in translation.misalignments for x in (a, b)])
 
-        misalignments_warnings = [
-            f"{misalignments[i]}-{misalignments[i+1]}"
-            for i in range(0, len(misalignments), 2)]
+            misalignments_warnings = [
+                f"{misalignments[i]}-{misalignments[i+1]}"
+                for i in range(0, len(misalignments), 2)]
 
-        if misalignments:
-            logger.warning(
-                f"{filename} - misilignments at lines [{', '.join(misalignments_warnings)}]",
-                save=True)
+            if misalignments:
+                logger.warning(
+                    f"{filename} - misilignments at lines [{', '.join(misalignments_warnings)}]",
+                    save=True)
 
         with open(out_path, 'w+', encoding='utf-8') as fp:
             fp.write(translated)
@@ -65,8 +65,13 @@ async def worker(
 
 async def main(llm: RateLimitedLLM, file_paths: list[str], config: Config):
     semaphore = asyncio.Semaphore(config.max_concurrent_requests or config.requests_per_minutes)
-    translator = JsonChunkerTranslator(llm, config.lines_per_chunk, config.chunks_per_request,
-                                       config.reduced_chunks_per_request)
+
+    if config.translator_type == 'json':
+        from src.json_translator.translator import JsonChunkerTranslator
+        translator = JsonChunkerTranslator(llm, config.lines_per_chunk, config.chunks_per_request)
+    else:
+        from src.text_translator.translator import TextTranslator
+        translator = TextTranslator (llm, config.lines_per_chunk)
 
     async with asyncio.TaskGroup() as tg:
         for file_path in file_paths:

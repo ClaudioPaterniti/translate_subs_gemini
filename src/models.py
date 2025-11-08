@@ -19,7 +19,6 @@ class Config(BaseModel):
     translator_type: str = "json"
     lines_per_chunk: int = 30
     chunks_per_request: int = 10
-    reduced_chunks_per_request: int = 5
     requests_per_minutes: int = 15
     token_per_minutes: int = 1000000
     max_concurrent_requests: Optional[int] = None
@@ -32,7 +31,7 @@ class Config(BaseModel):
 class TranslationOutput:
     name: str
     dialogue: list[str]
-    misalignments: list[tuple[int, int]]
+    misalignments: list[tuple[int, int]] = None
 
 class MisalignmentException(Exception):
     pass
