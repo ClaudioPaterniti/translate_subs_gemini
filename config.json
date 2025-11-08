@@ -1,5 +1,5 @@
 {
-    "model": "gemini-2.0-flash",
+    "model": "gemini-2.5-flash-lite",
     "original_language": "english",
     "translate_to": "italian",
     "requests_per_minutes": 15,

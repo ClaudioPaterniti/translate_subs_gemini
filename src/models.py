@@ -2,8 +2,6 @@ from typing import Optional, Any, Protocol
 
 from pydantic import BaseModel
 
-from src.logger import Logger
-
 class AssIgnore(BaseModel):
     field: str
     values: set[str]

@@ -25,40 +25,38 @@ LEVEL_STYLES = {
     LogLevel.ERROR: "red",
 }
 
-class Logger:
-    def __init__(self, debug: bool = False):
-        self.console = Console()
-        self.saved_logs: List[Log] = []
-        self.failed = 0
-        self._debug = debug
+console = Console()
+saved_logs: List[Log] = []
+failed = 0
+debug_enabled = False
 
-    def log(self, level: LogLevel, message: str, timestamped: bool = True, save: bool = False):
-        timestamp = datetime.now().strftime("[%H:%M:%S] - ") if timestamped else ''
-        style = LEVEL_STYLES.get(level, "grey50")
-        self.console.print(Text(timestamp, style="grey50") + Text(message, style=style))
-        if save:
-            self.saved_logs.append(Log(message, level))
-            if level == LogLevel.ERROR:
-                self.failed += 1
+def log(level: LogLevel, message: str, timestamped: bool = True, save: bool = False):
+    timestamp = datetime.now().strftime("[%H:%M:%S] - ") if timestamped else ''
+    style = LEVEL_STYLES.get(level, "grey50")
+    console.print(Text(timestamp, style="grey50") + Text(message, style=style))
+    if save:
+        saved_logs.append(Log(message, level))
+        if level == LogLevel.ERROR:
+            failed += 1
 
-    def print_final_log(self):
-        if self.failed:
-            self.log(LogLevel.ERROR, f"failed: {self.failed}\n", timestamped=False)
-        for entry in self.saved_logs:
-            self.log(entry.level, entry.message, timestamped=False)
+def print_final_log():
+    if failed:
+        log(LogLevel.ERROR, f"failed: {failed}\n", timestamped=False)
+    for entry in saved_logs:
+        log(entry.level, entry.message, timestamped=False)
 
-    def debug(self, msg: str, timestamped: bool = True, save: bool = False):
-        if self._debug:
-            self.log(LogLevel.DEBUG, msg, timestamped, save)
+def debug(msg: str, timestamped: bool = True, save: bool = False):
+    if debug_enabled:
+        log(LogLevel.DEBUG, msg, timestamped, save)
 
-    def info(self, msg: str, timestamped: bool = True, save: bool = False):
-        self.log(LogLevel.INFO, msg, timestamped, save)
+def info(msg: str, timestamped: bool = True, save: bool = False):
+    log(LogLevel.INFO, msg, timestamped, save)
 
-    def success(self, msg: str, timestamped: bool = True, save: bool = False):
-        self.log(LogLevel.SUCCESS, msg, timestamped, save)
+def success(msg: str, timestamped: bool = True, save: bool = False):
+    log(LogLevel.SUCCESS, msg, timestamped, save)
 
-    def warning(self, msg: str, timestamped: bool = True, save: bool = False):
-        self.log(LogLevel.WARNING, msg, timestamped, save)
+def warning(msg: str, timestamped: bool = True, save: bool = False):
+    log(LogLevel.WARNING, msg, timestamped, save)
 
-    def error(self, msg: str, timestamped: bool = True, save: bool = False):
-        self.log(LogLevel.ERROR, msg, timestamped, save)
+def error(msg: str, timestamped: bool = True, save: bool = False):
+    log(LogLevel.ERROR, msg, timestamped, save)

@@ -2,7 +2,7 @@ from math import ceil
 from itertools import chain
 
 from src.models import DialogueChunk, DialogueChunks, MisalignmentException
-from src.logger import Logger
+import src.logger as logger
 
 
 def split_chunks(chunks: DialogueChunks, chunks_per_block: int) -> list[DialogueChunks]:
@@ -21,10 +21,8 @@ class ChunkedTranslation:
     def __init__(
             self,
             dialogue: list[str],
-            chunk_size: int = 10,
-            logger: Logger = None):
+            chunk_size: int = 10):
         self.chunk_size = chunk_size
-        self.logger = logger or Logger()
         self._translated = False
 
         self.chunks: DialogueChunks = DialogueChunks(chunks=[

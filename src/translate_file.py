@@ -10,7 +10,7 @@ from src.rate_limiter import RateLimitedLLM
 from src.srt_parser import SrtTranslationFile
 from src.ass_parser import AssTranslationFile
 from src.chunker import ChunkedTranslation, split_chunks, flatten_chunks
-from src.logger import Logger
+import src.logger as logger
 
 class FileTranslationTask:
 
@@ -22,8 +22,7 @@ class FileTranslationTask:
             chunk_lines: int,
             request_chunks: int,
             reduced_request_chunks: int,
-            ass_settings: AssSettings,
-            logger: Logger):
+            ass_settings: AssSettings):
         self.path = path
         self.out_path = out_path
         self.llm = llm
@@ -31,7 +30,6 @@ class FileTranslationTask:
         self.request_chunks = request_chunks
         self.reduced_request_chunks = reduced_request_chunks
         self.ass_settings = ass_settings
-        self.logger = logger
 
 
         _, self._filename = os.path.split(self.path)
@@ -40,7 +38,7 @@ class FileTranslationTask:
         try:
             sub_file = self._load_file()
             dialogue = sub_file.get_dialogue()
-            translation = ChunkedTranslation(dialogue, self.chunk_lines, self.logger)
+            translation = ChunkedTranslation(dialogue, self.chunk_lines)
 
             result = await self._split_and_translate(
                 self._filename, translation.chunks, self.request_chunks)
@@ -53,11 +51,11 @@ class FileTranslationTask:
             with open(self.out_path, 'w+', encoding='utf-8') as fp:
                 fp.write(translated)
 
-            self.logger.success(f"{self._filename}: Generated {self.out_path}", save=True)
+            logger.success(f"{self._filename}: Generated {self.out_path}", save=True)
 
         except Exception as ex:
-            self.logger.error(f"{self._filename}: {ex}", save=True)
-            self.logger.debug(traceback.format_exc())
+            logger.error(f"{self._filename}: {ex}", save=True)
+            logger.debug(traceback.format_exc())
 
     def _load_file(self) -> TranslationFile:
         with open(self.path, 'r', encoding='utf-8') as fp:
@@ -91,7 +89,7 @@ class FileTranslationTask:
             return resp
         except InvalidJsonException:
             if len(chunks.chunks) > self.reduced_request_chunks:
-                self.logger.warning(f"{chunk_id}: Gemini returned an invalid json, retrying with reduced context window")
+                logger.warning(f"{chunk_id}: Gemini returned an invalid json, retrying with reduced context window")
                 return await self._split_and_translate(chunk_id, chunks, self.reduced_request_chunks)
             else:
                 raise
@@ -102,7 +100,7 @@ class FileTranslationTask:
             if len(misaligned.chunks) > self.request_chunks:
                 raise MisalignmentException(f"{self._filename}: result translation did no match original structure")
 
-            self.logger.warning(
+            logger.warning(
                 f"{self._filename}: result translation has some line misalignment, trying correction")
 
             text = misaligned.model_dump_json(indent=2)
@@ -116,6 +114,6 @@ class FileTranslationTask:
             for l in sub_file.map_dialogue_lines(misalignments)]
 
         if misalignments:
-            self.logger.warning(
+            logger.warning(
                 f"{self._filename} - misilignments at lines [{', '.join(misalignments_warnings)}]",
                 save=True)

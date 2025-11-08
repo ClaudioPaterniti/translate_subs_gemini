@@ -6,7 +6,7 @@ from google.genai.errors import ClientError, ServerError
 from google.genai.types import GenerateContentResponse
 
 from src.models import RetriableException, InvalidJsonException
-from src.logger import Logger
+import src.logger as logger
 
 
 Structure = TypeVar('Structure', bound=BaseModel)
@@ -14,11 +14,10 @@ Structure = TypeVar('Structure', bound=BaseModel)
 class GeminiClient:
 
     def __init__(self,
-            key: str, model: str, prompt: str, config: dict = None, logger: Logger = None):
+            key: str, model: str, prompt: str, config: dict = None):
         self.model = model
         self.prompt = prompt
         self.config = config or {}
-        self.logger = logger or Logger()
 
         self.client = genai.Client(api_key=key)
 
