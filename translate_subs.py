@@ -4,15 +4,12 @@ import asyncio
 import glob
 import traceback
 
-from src.srt_parser import SrtTranslationFile
-from src.ass_parser import AssTranslationFile
 from string import Template
 
 from src.models import *
 from src.gemini import GeminiClient
 from src.rate_limiter import RateLimitedLLM
-from src.srt_parser import SrtTranslationFile
-from src.ass_parser import AssTranslationFile
+from src.translate_file import TranslateFileTask
 
 import src.logger as logger
 
@@ -23,45 +20,13 @@ def translated_path(file_path: str, suffix: str) -> str:
     full_path = os.path.join(path, out_file_name)
     return full_path
 
-def load_file(path: str, ass_settings: AssSettings) -> TranslationFile:
-        with open(path, 'r', encoding='utf-8') as fp:
-            if path.endswith('.ass'):
-                return AssTranslationFile(fp.read(), ass_settings)
-            else:
-                return SrtTranslationFile(fp.read())
-
-async def worker(
-        semaphore: asyncio.Semaphore,
-        translator: Translator,
-        file_path: str,
-        out_path: str,
-        ass_settings: AssSettings):
-
-    async with semaphore: # avoid loading all files at once
-        _, filename = os.path.split(file_path)
-        sub_file = load_file(file_path, ass_settings)
-        dialogue = sub_file.get_dialogue()
-        translation = await translator(filename, dialogue)
-
-        translated = sub_file.get_translation(translation.dialogue)
-
-        if translation.misalignments:
-            misalignments = sub_file.map_dialogue_lines(
-                [x for a, b in translation.misalignments for x in (a, b)])
-
-            misalignments_warnings = [
-                f"{misalignments[i]}-{misalignments[i+1]}"
-                for i in range(0, len(misalignments), 2)]
-
-            if misalignments:
-                logger.warning(
-                    f"{filename} - misilignments at lines [{', '.join(misalignments_warnings)}]",
-                    save=True)
-
-        with open(out_path, 'w+', encoding='utf-8') as fp:
-            fp.write(translated)
-
-        logger.success(f"{filename}: Generated {out_path}", save=True)
+async def translate_file(task: TranslateFileTask, semaphore: asyncio.Semaphore):
+    async with semaphore: # avoid files being loded all at once
+        try:
+            await task()
+        except Exception as ex:
+            logger.error(f"{task.filename} failed: {ex}", save=True)
+            logger.debug(traceback.format_exc())
 
 async def main(llm: RateLimitedLLM, file_paths: list[str], config: Config):
     semaphore = asyncio.Semaphore(config.max_concurrent_requests or config.requests_per_minutes)
@@ -71,16 +36,13 @@ async def main(llm: RateLimitedLLM, file_paths: list[str], config: Config):
         translator = JsonChunkerTranslator(llm, config.lines_per_chunk, config.chunks_per_request)
     else:
         from src.text_translator.translator import TextTranslator
-        translator = TextTranslator (llm, config.lines_per_chunk)
+        translator = TextTranslator(llm, config.lines_per_chunk)
 
     async with asyncio.TaskGroup() as tg:
         for file_path in file_paths:
-            try:
-                out_path = translated_path(file_path, config.outfile_suffix)
-                tg.create_task(worker(semaphore, translator, file_path, out_path, config.ass_settings))
-            except Exception as ex:
-                logger.error(f"{file_path} failed: {ex}", save=True)
-                logger.debug(traceback.format_exc())
+            out_path = translated_path(file_path, config.outfile_suffix)
+            translation_task = TranslateFileTask(translator, file_path, out_path, config.ass_settings)
+            tg.create_task(translate_file(translation_task, semaphore))
 
     print('\n')
     logger.info(f'Terminated - final log:')
@@ -107,7 +69,7 @@ if __name__ == '__main__':
         user_prompt = user_prompt_fp.read()
         system_prompt = Template(system_prompt_fp.read()).substitute(dict(config))
 
-    logger._debug = config.debug
+    logger.debug_enabled = config.debug
     prompt = user_prompt + '\n' + system_prompt
 
     if len(sys.argv) == 2 and os.path.isdir(sys.argv[1]):

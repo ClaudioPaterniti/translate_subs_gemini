@@ -25,16 +25,10 @@ class TextTranslator:
         self.chunk_lines = chunk_lines
 
     async def __call__(self, filename: str, dialogue: list[str]) -> TranslationOutput:
-        try:
+        translated = await self._split_and_translate(
+            filename, dialogue, self.chunk_lines)
 
-            translated = await self._split_and_translate(
-                filename, dialogue, self.chunk_lines)
-
-            return TranslationOutput(filename, translated)
-
-        except Exception as ex:
-            logger.error(f"{filename}: {ex}", save=True)
-            logger.debug(traceback.format_exc())
+        return TranslationOutput(filename, translated)
 
     async def _split_and_translate(
             self, chunk_id: str, dialogue: list[str], chunk_lines: int) -> list[str]:

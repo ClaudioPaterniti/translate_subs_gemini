@@ -24,22 +24,17 @@ class JsonChunkerTranslator:
         self._reduced_request_chunks = request_chunks/2
 
     async def __call__(self, filename: str, dialogue: list[str]) -> TranslationOutput:
-        try:
-            translation = ChunkedTranslation(dialogue, self.chunk_lines)
+        translation = ChunkedTranslation(dialogue, self.chunk_lines)
 
-            result = await self._split_and_translate(
-                filename, translation.chunks, self.request_chunks)
+        result = await self._split_and_translate(
+            filename, translation.chunks, self.request_chunks)
 
-            translation.add_translation(result)
-            misalignments = await self._handle_misalignments(filename, translation)
+        translation.add_translation(result)
+        misalignments = await self._handle_misalignments(filename, translation)
 
-            translated =  translation.get_translated_dialogue()
+        translated =  translation.get_translated_dialogue()
 
-            return TranslationOutput(filename, translated, misalignments)
-
-        except Exception as ex:
-            logger.error(f"{filename}: {ex}", save=True)
-            logger.debug(traceback.format_exc())
+        return TranslationOutput(filename, translated, misalignments)
 
     async def _split_and_translate(
             self, chunk_id: str, chunks: DialogueChunks, request_chunks: int) -> DialogueChunks:

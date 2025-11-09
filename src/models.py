@@ -15,15 +15,15 @@ class Config(BaseModel):
     original_language: str
     translate_to: str
     outfile_suffix: str
-    model: str = "gemini-2.0-flash"
-    translator_type: str = "json"
-    lines_per_chunk: int = 30
+    model: str = "gemini-2.0-flash-lite"
+    translator_type: str = "text"
+    lines_per_chunk: int = 500
     chunks_per_request: int = 10
     requests_per_minutes: int = 15
     token_per_minutes: int = 1000000
     max_concurrent_requests: Optional[int] = None
     content_config: dict[str, Any] = {}
-    max_retries: int = 50
+    max_retries: int = 2
     ass_settings: AssSettings
     debug: bool = False
 
